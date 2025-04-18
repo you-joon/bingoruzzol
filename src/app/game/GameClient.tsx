@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -29,67 +29,7 @@ export default function GameClient() {
   const [showShareMessage, setShowShareMessage] = useState<boolean>(false);
   const [playerName, setPlayerName] = useState<string>("");
   const [comment, setComment] = useState<string>("");
-  const [chatMessages, setChatMessages] = useState<Array<{name: string, message: string, timestamp: string}>>([]);
-  const [newMessage, setNewMessage] = useState<string>("");
-  const [chatVisible, setChatVisible] = useState<boolean>(true);
-  const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
-  const [lastRefreshTime, setLastRefreshTime] = useState<string>("");
-  const chatContainerRef = useRef<HTMLDivElement>(null);
-
-  // 색상 해시 함수 - 사용자 이름에 따라 일관된 색상 생성
-  const getColorForName = (name: string) => {
-    // 미리 정의된 말풍선 색상 (부드러운 파스텔 계열)
-    const colors = [
-      { bg: 'bg-blue-100', text: 'text-blue-800' },
-      { bg: 'bg-green-100', text: 'text-green-800' },
-      { bg: 'bg-purple-100', text: 'text-purple-800' },
-      { bg: 'bg-yellow-100', text: 'text-yellow-800' },
-      { bg: 'bg-pink-100', text: 'text-pink-800' },
-      { bg: 'bg-indigo-100', text: 'text-indigo-800' },
-      { bg: 'bg-red-100', text: 'text-red-800' },
-      { bg: 'bg-orange-100', text: 'text-orange-800' },
-    ];
-    
-    // 이름에서 간단한 해시 생성
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = ((hash << 5) - hash) + name.charCodeAt(i);
-      hash = hash & hash; // 32bit 정수로 변환
-    }
-    
-    // 해시값을 색상 배열의 인덱스로 변환
-    const colorIndex = Math.abs(hash) % colors.length;
-    return colors[colorIndex];
-  };
-
-  // 메시지 불러오기 함수를 useCallback으로 감싸기
-  const loadChatMessages = useCallback(() => {
-    try {
-      const storedMessages = localStorage.getItem('chat_messages');
-      if (storedMessages) {
-        setChatMessages(JSON.parse(storedMessages));
-        // 상태 업데이트 후 스크롤을 아래로 이동시키기 위해 다음 렌더링 사이클에 실행
-        setTimeout(() => scrollToBottom(), 100);
-      }
-      setLastRefreshTime(new Date().toLocaleTimeString());
-    } catch (error) {
-      console.error("메시지 로드 중 오류:", error);
-    }
-  }, []);
-
-  // 메시지가 추가되거나 로드될 때 스크롤을 아래로 이동
-  const scrollToBottom = useCallback(() => {
-    if (chatContainerRef.current && chatVisible) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-    }
-  }, [chatVisible]);
-
-  // 채팅 메시지 변경될 때마다 스크롤 아래로 (chatVisible을 의존성에 추가)
-  useEffect(() => {
-    if (chatVisible && chatMessages.length > 0) {
-      scrollToBottom();
-    }
-  }, [chatMessages, chatVisible, scrollToBottom]);
+  const [searchValue, setSearchValue] = useState<string>("");
 
   // URL에서 게임 상태 불러오기
   useEffect(() => {
@@ -99,7 +39,6 @@ export default function GameClient() {
         const state = searchParams.get('state');
         const name = searchParams.get('name');
         const msg = searchParams.get('comment');
-        const chatMsg = searchParams.get('chat');
         
         if (state) {
           // URL에서 상태를 불러옴
@@ -131,36 +70,6 @@ export default function GameClient() {
           
           // 로컬 스토리지에도 저장
           localStorage.setItem(STORAGE_KEY, JSON.stringify(decodedState));
-          
-          // 채팅 메시지가 있는 경우 처리
-          if (chatMsg) {
-            try {
-              const decodedChat = JSON.parse(atob(chatMsg));
-              if (decodedChat.name && decodedChat.message) {
-                const newChatMessage = {
-                  name: decodedChat.name,
-                  message: decodedChat.message,
-                  timestamp: new Date().toLocaleTimeString()
-                };
-                
-                // 로컬 스토리지에서 기존 채팅 내역 로드
-                const storedMessages = localStorage.getItem('chat_messages');
-                const messages = storedMessages ? JSON.parse(storedMessages) : [];
-                
-                // 새 메시지 추가
-                messages.push(newChatMessage);
-                
-                // 로컬 스토리지에 저장 및 상태 업데이트
-                localStorage.setItem('chat_messages', JSON.stringify(messages));
-                setChatMessages(messages);
-              }
-            } catch (error) {
-              console.error("채팅 메시지 파싱 오류:", error);
-            }
-          }
-          
-          // 채팅 메시지 로드
-          loadChatMessages();
           
           return; // URL에서 불러왔으므로 로컬 스토리지 로드는 건너뛰기
         }
@@ -202,14 +111,11 @@ export default function GameClient() {
         } else {
           setShowEmptyWarning(true);
         }
-        
-        // 채팅 메시지 로드
-        loadChatMessages();
       } catch (error) {
         console.error("게임 상태 로드 중 오류:", error);
       }
     }
-  }, [searchParams, loadChatMessages]);
+  }, [searchParams]);
 
   // 게임 상태 변경 시 로컬 스토리지에 저장
   useEffect(() => {
@@ -247,14 +153,10 @@ export default function GameClient() {
     playerName
   ]);
 
-  // 게임 상태를 URL로 공유
+  // 게임 결과 공유 함수
   const shareGameState = () => {
     try {
-      if (!playerName) {
-        alert("이름을 입력해주세요!");
-        return;
-      }
-      
+      // 게임 상태를 문자열로 변환하고 Base64로 인코딩
       const stateToShare = {
         gameStarted,
         winCondition,
@@ -263,144 +165,108 @@ export default function GameClient() {
         completedLines,
         isGameOver,
         isSaved,
-        gameStartTime,
-        gameEndTime,
+        gameStartTime: gameStartTime?.toISOString(),
+        gameEndTime: gameEndTime?.toISOString(),
         completedLineIndices
       };
       
-      // 상태를 Base64로 인코딩
       const encodedState = btoa(JSON.stringify(stateToShare));
+      const encodedName = encodeURIComponent(playerName || "");
+      const encodedComment = encodeURIComponent(comment || "");
       
-      // 이름과 코멘트를 URL 인코딩
-      const encodedName = encodeURIComponent(playerName);
-      const encodedComment = encodeURIComponent(comment);
-      
-      // 현재 URL을 기반으로 공유 URL 생성
-      const baseUrl = window.location.origin + window.location.pathname;
-      const fullUrl = `${baseUrl}?state=${encodedState}&name=${encodedName}&comment=${encodedComment}`;
+      // URL 생성
+      const url = `${window.location.origin}${window.location.pathname}?state=${encodedState}&name=${encodedName}&comment=${encodedComment}`;
       
       // 클립보드에 복사
-      navigator.clipboard.writeText(fullUrl).then(() => {
-        setShareUrl(fullUrl);
-        setShowShareMessage(true);
-        setTimeout(() => setShowShareMessage(false), 3000);
-      }).catch(err => {
-        console.error('클립보드 복사 실패:', err);
-        // 복사 실패 시 URL을 보여주고 수동으로 복사하도록 함
-        setShareUrl(fullUrl);
-        setShowShareMessage(true);
-      });
+      navigator.clipboard.writeText(url).then(
+        () => {
+          setShareUrl(url);
+          setShowShareMessage(true);
+          setTimeout(() => setShowShareMessage(false), 5000); // 5초 후 메시지 숨김
+        },
+        (err) => {
+          console.error('클립보드 복사 실패:', err);
+          alert('URL을 클립보드에 복사할 수 없습니다. 직접 복사해주세요.');
+        }
+      );
     } catch (error) {
       console.error("게임 상태 공유 중 오류:", error);
-      alert("게임 상태 공유 중 오류가 발생했습니다.");
+      alert("게임 상태를 공유하는 중 오류가 발생했습니다.");
     }
   };
 
   // 셀 내용 변경 처리
   const handleCellChange = (index: number, value: string) => {
-    if (gameStarted) return; // 게임 시작 후에는 입력 불가
+    if (gameStarted) return; // 게임 시작되면 편집 불가
     
     const newBoard = [...bingoBoard];
     newBoard[index] = value;
     setBingoBoard(newBoard);
     
-    // 빈 칸 체크
+    // 저장 상태 및 경고 업데이트
+    setIsSaved(false);
     const hasEmptyCells = newBoard.some(cell => removeAllSpaces(cell) === "");
     setShowEmptyWarning(hasEmptyCells);
     
-    // 저장 상태 초기화
-    if (isSaved) {
-      setIsSaved(false);
-      setDuplicateValues([]);
-    }
+    // 중복 값 체크
+    checkDuplicates(newBoard);
   };
 
-  // 셀 포커스 처리
   const handleCellFocus = (index: number) => {
     setFocusedCell(index);
   };
-
-  // 셀 블러 처리 (포커스 아웃)
+  
   const handleCellBlur = () => {
-    // 포커스 아웃 시 중복 체크
     setFocusedCell(null);
-    checkDuplicates(bingoBoard);
-    
-    // 빈 칸 체크
-    const hasEmptyCells = bingoBoard.some(cell => removeAllSpaces(cell) === "");
-    setShowEmptyWarning(hasEmptyCells);
   };
 
   // 모든 공백 제거 함수
   const removeAllSpaces = (str: string): string => {
-    return str.replace(/\s+/g, '');
+    return str.replace(/\s+/g, "");
   };
 
   // 중복 체크 함수
   const checkDuplicates = (board: string[]) => {
+    const valueMap = new Map<string, number>();
     const duplicates: number[] = [];
-    const valueMap: { [key: string]: number[] } = {};
     
-    // 빈 값은 중복 체크하지 않음, 모든 공백 제거하여 비교
     board.forEach((value, index) => {
-      // 모든 공백을 제거한 값으로 비교
-      const noSpaceValue = removeAllSpaces(value);
-      if (noSpaceValue !== "") {
-        if (!valueMap[noSpaceValue]) {
-          valueMap[noSpaceValue] = [index];
-        } else {
-          valueMap[noSpaceValue].push(index);
-        }
+      const trimmedValue = removeAllSpaces(value);
+      if (trimmedValue === "") return;
+      
+      if (valueMap.has(trimmedValue)) {
+        duplicates.push(index);
+        duplicates.push(valueMap.get(trimmedValue)!);
+      } else {
+        valueMap.set(trimmedValue, index);
       }
     });
     
-    // 중복된 값이 있는 인덱스 수집
-    Object.values(valueMap).forEach(indices => {
-      if (indices.length > 1) {
-        indices.forEach(index => duplicates.push(index));
-      }
-    });
-    
-    setDuplicateValues(duplicates);
-    return duplicates.length === 0;
+    // 중복 인덱스 중복 제거
+    const uniqueDuplicates = [...new Set(duplicates)];
+    setDuplicateValues(uniqueDuplicates);
   };
 
-  // 저장 기능
+  // 보드 저장 및 게임 준비
   const saveBoard = () => {
-    // 모든 칸이 채워졌는지 확인 (공백 제외)
-    const allFilled = bingoBoard.every(cell => removeAllSpaces(cell) !== "");
-    
-    // 중복값 확인
-    const noDuplicates = checkDuplicates(bingoBoard);
-    
-    if (!allFilled) {
-      alert("모든 칸을 채워주세요.");
+    // 모든 값이 입력되었는지 확인
+    const hasEmptyCells = bingoBoard.some(cell => removeAllSpaces(cell) === "");
+    if (hasEmptyCells) {
       setShowEmptyWarning(true);
       return;
     }
     
-    if (!noDuplicates) {
-      alert("중복된 값이 있습니다. 모든 값은 고유해야 합니다.");
+    // 중복된 값이 있는지 확인
+    if (duplicateValues.length > 0) {
       return;
     }
     
-    // 저장 성공
     setIsSaved(true);
     setShowEmptyWarning(false);
-    alert("빙고판이 저장되었습니다. 게임을 시작할 수 있습니다.");
   };
 
   // 게임 시작
   const startGame = () => {
-    if (!playerName) {
-      const name = prompt("게임을 시작하기 전에 이름을 입력해주세요:");
-      if (name) {
-        setPlayerName(name);
-      } else {
-        return; // 이름을 입력하지 않으면 게임 시작 취소
-      }
-    }
-    
     setGameStarted(true);
     setGameStartTime(new Date());
     setGameEndTime(null);
@@ -411,6 +277,18 @@ export default function GameClient() {
   const handleCellClick = (index: number) => {
     if (!gameStarted || isGameOver) return; // 게임 시작 전이나 게임 종료 후에는 클릭 불가
     
+    // 이미 체크된 셀인 경우 취소 확인
+    if (clickedCells[index]) {
+      const confirmCancel = window.confirm("이 항목 체크를 취소하시겠습니까?");
+      if (confirmCancel) {
+        const newClickedCells = [...clickedCells];
+        newClickedCells[index] = false;
+        setClickedCells(newClickedCells);
+      }
+      return;
+    }
+    
+    // 체크되지 않은 셀 체크
     const newClickedCells = [...clickedCells];
     newClickedCells[index] = true;
     setClickedCells(newClickedCells);
@@ -439,74 +317,47 @@ export default function GameClient() {
     return `${hours > 0 ? hours + '시간 ' : ''}${minutes}분 ${seconds}초`;
   };
 
-  // 빙고 확인
+  // 클릭된 셀이 변경될 때마다 빙고 체크
   useEffect(() => {
     if (!gameStarted) return;
+
+    // 가로, 세로, 대각선 라인 정의
+    const lines = [
+      // 가로 라인
+      [0, 1, 2, 3, 4],
+      [5, 6, 7, 8, 9],
+      [10, 11, 12, 13, 14],
+      [15, 16, 17, 18, 19],
+      [20, 21, 22, 23, 24],
+      // 세로 라인
+      [0, 5, 10, 15, 20],
+      [1, 6, 11, 16, 21],
+      [2, 7, 12, 17, 22],
+      [3, 8, 13, 18, 23],
+      [4, 9, 14, 19, 24],
+      // 대각선 라인
+      [0, 6, 12, 18, 24],
+      [4, 8, 12, 16, 20]
+    ];
     
-    let lines = 0;
+    // 완성된 라인 개수와 해당 인덱스 추적
+    let completedCount = 0;
     const newCompletedLineIndices: number[][] = [];
     
-    // 가로줄 확인
-    for (let i = 0; i < 5; i++) {
-      const rowIndices = [i * 5, i * 5 + 1, i * 5 + 2, i * 5 + 3, i * 5 + 4];
-      if (
-        clickedCells[rowIndices[0]] &&
-        clickedCells[rowIndices[1]] &&
-        clickedCells[rowIndices[2]] &&
-        clickedCells[rowIndices[3]] &&
-        clickedCells[rowIndices[4]]
-      ) {
-        lines++;
-        newCompletedLineIndices.push(rowIndices);
+    // 각 라인 확인
+    for (const line of lines) {
+      const isComplete = line.every(index => clickedCells[index]);
+      if (isComplete) {
+        completedCount++;
+        newCompletedLineIndices.push(line);
       }
     }
     
-    // 세로줄 확인
-    for (let i = 0; i < 5; i++) {
-      const colIndices = [i, i + 5, i + 10, i + 15, i + 20];
-      if (
-        clickedCells[colIndices[0]] &&
-        clickedCells[colIndices[1]] &&
-        clickedCells[colIndices[2]] &&
-        clickedCells[colIndices[3]] &&
-        clickedCells[colIndices[4]]
-      ) {
-        lines++;
-        newCompletedLineIndices.push(colIndices);
-      }
-    }
-    
-    // 대각선 (좌상단 -> 우하단)
-    const diag1Indices = [0, 6, 12, 18, 24];
-    if (
-      clickedCells[diag1Indices[0]] &&
-      clickedCells[diag1Indices[1]] &&
-      clickedCells[diag1Indices[2]] &&
-      clickedCells[diag1Indices[3]] &&
-      clickedCells[diag1Indices[4]]
-    ) {
-      lines++;
-      newCompletedLineIndices.push(diag1Indices);
-    }
-    
-    // 대각선 (우상단 -> 좌하단)
-    const diag2Indices = [4, 8, 12, 16, 20];
-    if (
-      clickedCells[diag2Indices[0]] &&
-      clickedCells[diag2Indices[1]] &&
-      clickedCells[diag2Indices[2]] &&
-      clickedCells[diag2Indices[3]] &&
-      clickedCells[diag2Indices[4]]
-    ) {
-      lines++;
-      newCompletedLineIndices.push(diag2Indices);
-    }
-    
-    setCompletedLines(lines);
+    setCompletedLines(completedCount);
     setCompletedLineIndices(newCompletedLineIndices);
     
     // 게임 종료 확인
-    if (lines >= winCondition && !isGameOver) {
+    if (completedCount >= winCondition && !isGameOver) {
       setIsGameOver(true);
       setGameEndTime(new Date());
     }
@@ -563,209 +414,38 @@ export default function GameClient() {
     setComment("");
   };
 
-  // 채팅 메시지 전송
-  const sendChatMessage = () => {
-    if (!newMessage.trim() || !playerName) return;
+  // 검색 기능 - 입력값과 정확히 일치하는 셀 체크
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
     
-    try {
-      const messageObj = {
-        name: playerName,
-        message: newMessage.trim(),
-        timestamp: new Date().toLocaleTimeString()
-      };
-      
-      // 메시지 추가
-      const updatedMessages = [...chatMessages, messageObj];
-      setChatMessages(updatedMessages);
-      
-      // 로컬 스토리지에 저장
-      localStorage.setItem('chat_messages', JSON.stringify(updatedMessages));
-      
-      // 메시지 초기화
-      setNewMessage("");
-      
-      // 스크롤 아래로 이동
-      setTimeout(() => scrollToBottom(), 100);
-      
-      // URL 생성 및 공유
-      const stateToShare = {
-        gameStarted,
-        winCondition,
-        bingoBoard,
-        clickedCells,
-        completedLines,
-        isGameOver,
-        isSaved,
-        gameStartTime,
-        gameEndTime,
-        completedLineIndices
-      };
-      const encodedState = btoa(JSON.stringify(stateToShare));
-      
-      // 채팅 메시지 인코딩
-      const chatData = {
-        name: playerName,
-        message: newMessage.trim()
-      };
-      const encodedChat = btoa(JSON.stringify(chatData));
-      
-      // 이름 인코딩
-      const encodedName = encodeURIComponent(playerName);
-      
-      // 현재 URL을 기반으로 공유 URL 생성
-      const baseUrl = window.location.origin + window.location.pathname;
-      const fullUrl = `${baseUrl}?state=${encodedState}&name=${encodedName}&chat=${encodedChat}`;
-      
-      // 클립보드에 복사
-      navigator.clipboard.writeText(fullUrl).then(() => {
-        setShareUrl(fullUrl);
-        setShowShareMessage(true);
-        setTimeout(() => setShowShareMessage(false), 3000);
-      }).catch(err => {
-        console.error('클립보드 복사 실패:', err);
-        // 복사 실패 시 URL을 보여주고 수동으로 복사하도록 함
-        setShareUrl(fullUrl);
-        setShowShareMessage(true);
-      });
-    } catch (error) {
-      console.error("메시지 전송 중 오류:", error);
-    }
-  };
-
-  // 채팅창 토글
-  const toggleChat = () => {
-    setChatVisible(!chatVisible);
-  };
-
-  // 자동 메시지 갱신 - 게임 시작된 경우만 실행
-  useEffect(() => {
-    let intervalId: NodeJS.Timeout | null = null;
+    if (!gameStarted || isGameOver || !searchValue.trim()) return;
     
-    // 게임이 시작되고 저장되었을 때만 자동 갱신 활성화
-    if (gameStarted && isSaved && autoRefresh) {
-      intervalId = setInterval(() => {
-        loadChatMessages();
-      }, 10000); // 10초마다 갱신
-      
-      console.log("채팅 자동 갱신 시작됨");
-    }
+    // 검색값과 정확히 일치하는 셀 찾기
+    const newClickedCells = [...clickedCells];
+    let found = false;
     
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-        console.log("채팅 자동 갱신 중지됨");
+    bingoBoard.forEach((cellValue, index) => {
+      // 정확히 일치하는지 확인 (앞뒤 공백 제거)
+      if (cellValue.trim() === searchValue.trim()) {
+        newClickedCells[index] = true;
+        found = true;
       }
-    };
-  }, [gameStarted, isSaved, autoRefresh, loadChatMessages]);
-
-  // 자동 갱신 토글
-  const toggleAutoRefresh = () => {
-    setAutoRefresh(!autoRefresh);
+    });
+    
+    if (found) {
+      setClickedCells(newClickedCells);
+      // 검색 성공 후 입력창 초기화
+      setSearchValue("");
+    } else {
+      // 일치하는 값을 찾지 못했을 때 알림 (선택사항)
+      alert(`"${searchValue}"를 찾을 수 없습니다.`);
+    }
   };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-b from-blue-100 to-purple-100">
-      <div className="w-full max-w-md bg-white p-6 rounded-lg shadow-lg">
+      <div className="w-full max-w-4xl bg-white p-6 rounded-lg shadow-lg">
         <h1 className="text-2xl font-bold text-center text-blue-600 mb-4">5x5 빙고 게임</h1>
-        
-        {/* 채팅 섹션 (게임 시작 후에만 표시) */}
-        {gameStarted && isSaved && (
-          <div className="mb-4">
-            <div className="flex justify-between items-center mb-2">
-              <h2 className="text-lg font-semibold text-gray-700">채팅</h2>
-              <div className="flex items-center space-x-2">
-                <button 
-                  onClick={loadChatMessages}
-                  className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200"
-                  title="메시지 수동 갱신"
-                >
-                  갱신
-                </button>
-                <button 
-                  onClick={toggleAutoRefresh}
-                  className={`text-xs px-2 py-1 rounded ${
-                    autoRefresh 
-                      ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                  title={autoRefresh ? "자동 갱신 중지" : "자동 갱신 시작"}
-                >
-                  {autoRefresh ? '자동 갱신 켜짐' : '자동 갱신 꺼짐'}
-                </button>
-                <button 
-                  onClick={toggleChat}
-                  className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-                >
-                  {chatVisible ? '숨기기' : '보이기'}
-                </button>
-              </div>
-            </div>
-            
-            {chatVisible && (
-              <>
-                <div 
-                  ref={chatContainerRef}
-                  className="border rounded-lg p-2 mb-2 h-32 overflow-y-auto bg-gray-50"
-                >
-                  {chatMessages.length === 0 ? (
-                    <p className="text-gray-400 text-center text-sm italic">
-                      아직 채팅 메시지가 없습니다.
-                    </p>
-                  ) : (
-                    chatMessages.map((msg, index) => {
-                      // 사용자 이름에 따라 색상 결정
-                      const isCurrentUser = msg.name === playerName;
-                      const colorStyle = isCurrentUser 
-                        ? { bg: 'bg-blue-100', text: 'text-blue-800' } 
-                        : getColorForName(msg.name);
-                      
-                      return (
-                        <div key={index} className={`mb-1 ${isCurrentUser ? 'text-right' : 'text-left'}`}>
-                          <span className={`inline-block px-2 py-1 rounded-lg text-sm ${colorStyle.bg} ${colorStyle.text}`}>
-                            <span className="font-bold">{msg.name}</span>: {msg.message}
-                            <span className="text-xs text-gray-500 ml-1">{msg.timestamp}</span>
-                          </span>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-                
-                <div className="text-xs text-gray-500 mb-2 flex justify-between">
-                  <span>
-                    {autoRefresh ? '10초마다 자동 갱신 중' : '자동 갱신 꺼짐'}
-                  </span>
-                  <span>
-                    마지막 갱신: {lastRefreshTime || '없음'}
-                  </span>
-                </div>
-                
-                <div className="flex">
-                  <input
-                    type="text"
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    placeholder="메시지를 입력하세요..."
-                    className="flex-1 p-2 border rounded-l"
-                    onKeyPress={(e) => e.key === 'Enter' && sendChatMessage()}
-                  />
-                  <button
-                    onClick={sendChatMessage}
-                    className="px-3 py-2 bg-blue-500 text-white rounded-r hover:bg-blue-600"
-                  >
-                    전송
-                  </button>
-                </div>
-                
-                {showShareMessage && (
-                  <p className="mt-2 text-xs text-gray-600">
-                    메시지 URL이 클립보드에 복사되었습니다. 이 URL을 상대방에게 보내세요.
-                  </p>
-                )}
-              </>
-            )}
-          </div>
-        )}
         
         {!gameStarted && !isSaved && (
           <div className="mb-4">
@@ -858,10 +538,9 @@ export default function GameClient() {
           </div>
         )}
         
-        {showShareMessage && !chatVisible && (
-          <div className="text-center mb-4 p-2 bg-green-100 text-green-800 rounded text-sm">
-            <p>URL이 클립보드에 복사되었습니다!</p>
-            <p className="text-xs mt-1 break-all">{shareUrl}</p>
+        {showShareMessage && (
+          <div className="fixed top-5 right-5 bg-green-500 text-white px-4 py-3 rounded shadow-lg transition-opacity duration-300 z-50">
+            <p className="font-medium">URL이 클립보드에 복사되었습니다!</p>
           </div>
         )}
         
@@ -875,6 +554,28 @@ export default function GameClient() {
                 게임 시작 시간: {formatTime(gameStartTime)}
               </p>
             )}
+            
+            {/* 검색 기능 */}
+            <div className="mt-4">
+              <form onSubmit={handleSearch} className="flex">
+                <input
+                  type="text"
+                  value={searchValue}
+                  onChange={(e) => setSearchValue(e.target.value)}
+                  placeholder="정확한 값을 입력하세요"
+                  className="flex-1 p-2 border rounded-l focus:outline-none focus:ring-2 focus:ring-blue-300"
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-500 text-white rounded-r hover:bg-blue-600"
+                >
+                  찾기
+                </button>
+              </form>
+              <p className="text-xs text-gray-500 mt-1">
+                * 값이 정확히 일치하는 칸만 선택됩니다
+              </p>
+            </div>
           </div>
         )}
         
@@ -928,7 +629,7 @@ export default function GameClient() {
               {!isSaved ? (
                 <button
                   onClick={saveBoard}
-                  className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                  className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 min-w-[100px]"
                   disabled={bingoBoard.some(cell => removeAllSpaces(cell) === "") || duplicateValues.length > 0}
                 >
                   저장하기
@@ -936,14 +637,14 @@ export default function GameClient() {
               ) : (
                 <button
                   onClick={startGame}
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 min-w-[100px]"
                 >
                   게임 시작
                 </button>
               )}
               <button
                 onClick={newGame}
-                className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+                className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 min-w-[100px]"
               >
                 새 게임
               </button>
@@ -953,21 +654,24 @@ export default function GameClient() {
               {isGameOver && (
                 <button
                   onClick={newGame}
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 min-w-[100px]"
                 >
                   새 게임
                 </button>
               )}
               <button
                 onClick={resetGame}
-                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 min-w-[100px]"
               >
                 초기화
               </button>
             </>
           )}
           
-          <Link href="/" className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 mt-2 sm:mt-0">
+          <Link 
+            href="/" 
+            className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 min-w-[100px] text-center"
+          >
             메인으로
           </Link>
         </div>
