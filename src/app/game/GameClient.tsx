@@ -139,7 +139,7 @@ export default function GameClient() {
                 
                 // 로컬 스토리지에서 기존 채팅 내역 로드
                 const storedMessages = localStorage.getItem('chat_messages');
-                let messages = storedMessages ? JSON.parse(storedMessages) : [];
+                const messages = storedMessages ? JSON.parse(storedMessages) : [];
                 
                 // 새 메시지 추가
                 messages.push(newChatMessage);
@@ -203,7 +203,7 @@ export default function GameClient() {
         console.error("게임 상태 로드 중 오류:", error);
       }
     }
-  }, [searchParams]);
+  }, [searchParams, loadChatMessages]);
 
   // 게임 상태 변경 시 로컬 스토리지에 저장
   useEffect(() => {
@@ -645,7 +645,7 @@ export default function GameClient() {
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [gameStarted, isSaved, autoRefresh]);
+  }, [gameStarted, isSaved, autoRefresh, loadChatMessages]);
 
   // 자동 갱신 토글
   const toggleAutoRefresh = () => {
