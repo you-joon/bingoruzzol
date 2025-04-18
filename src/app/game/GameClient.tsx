@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -62,28 +62,34 @@ export default function GameClient() {
     return colors[colorIndex];
   };
 
-  // 메시지 불러오기 함수
-  const loadChatMessages = () => {
-    const storedMessages = localStorage.getItem('chat_messages');
-    if (storedMessages) {
-      setChatMessages(JSON.parse(storedMessages));
-      // 상태 업데이트 후 스크롤을 아래로 이동시키기 위해 다음 렌더링 사이클에 실행
-      setTimeout(() => scrollToBottom(), 100);
+  // 메시지 불러오기 함수를 useCallback으로 감싸기
+  const loadChatMessages = useCallback(() => {
+    try {
+      const storedMessages = localStorage.getItem('chat_messages');
+      if (storedMessages) {
+        setChatMessages(JSON.parse(storedMessages));
+        // 상태 업데이트 후 스크롤을 아래로 이동시키기 위해 다음 렌더링 사이클에 실행
+        setTimeout(() => scrollToBottom(), 100);
+      }
+      setLastRefreshTime(new Date().toLocaleTimeString());
+    } catch (error) {
+      console.error("메시지 로드 중 오류:", error);
     }
-    setLastRefreshTime(new Date().toLocaleTimeString());
-  };
+  }, []);
 
   // 메시지가 추가되거나 로드될 때 스크롤을 아래로 이동
-  const scrollToBottom = () => {
-    if (chatContainerRef.current) {
+  const scrollToBottom = useCallback(() => {
+    if (chatContainerRef.current && chatVisible) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
-  };
+  }, [chatVisible]);
 
-  // 채팅 메시지 변경될 때마다 스크롤 아래로
+  // 채팅 메시지 변경될 때마다 스크롤 아래로 (chatVisible을 의존성에 추가)
   useEffect(() => {
-    scrollToBottom();
-  }, [chatMessages]);
+    if (chatVisible && chatMessages.length > 0) {
+      scrollToBottom();
+    }
+  }, [chatMessages, chatVisible, scrollToBottom]);
 
   // URL에서 게임 상태 불러오기
   useEffect(() => {
@@ -561,28 +567,27 @@ export default function GameClient() {
   const sendChatMessage = () => {
     if (!newMessage.trim() || !playerName) return;
     
-    const messageObj = {
-      name: playerName,
-      message: newMessage.trim(),
-      timestamp: new Date().toLocaleTimeString()
-    };
-    
-    // 메시지 추가
-    const updatedMessages = [...chatMessages, messageObj];
-    setChatMessages(updatedMessages);
-    
-    // 로컬 스토리지에 저장
-    localStorage.setItem('chat_messages', JSON.stringify(updatedMessages));
-    
-    // 메시지 초기화
-    setNewMessage("");
-    
-    // 스크롤 아래로 이동
-    setTimeout(() => scrollToBottom(), 100);
-    
-    // URL 생성 및 공유
     try {
-      // 상태를 Base64로 인코딩
+      const messageObj = {
+        name: playerName,
+        message: newMessage.trim(),
+        timestamp: new Date().toLocaleTimeString()
+      };
+      
+      // 메시지 추가
+      const updatedMessages = [...chatMessages, messageObj];
+      setChatMessages(updatedMessages);
+      
+      // 로컬 스토리지에 저장
+      localStorage.setItem('chat_messages', JSON.stringify(updatedMessages));
+      
+      // 메시지 초기화
+      setNewMessage("");
+      
+      // 스크롤 아래로 이동
+      setTimeout(() => scrollToBottom(), 100);
+      
+      // URL 생성 및 공유
       const stateToShare = {
         gameStarted,
         winCondition,
@@ -623,7 +628,7 @@ export default function GameClient() {
         setShowShareMessage(true);
       });
     } catch (error) {
-      console.error("메시지 공유 중 오류:", error);
+      console.error("메시지 전송 중 오류:", error);
     }
   };
 
@@ -632,18 +637,24 @@ export default function GameClient() {
     setChatVisible(!chatVisible);
   };
 
-  // 자동 메시지 갱신
+  // 자동 메시지 갱신 - 게임 시작된 경우만 실행
   useEffect(() => {
-    let intervalId: NodeJS.Timeout;
+    let intervalId: NodeJS.Timeout | null = null;
     
+    // 게임이 시작되고 저장되었을 때만 자동 갱신 활성화
     if (gameStarted && isSaved && autoRefresh) {
       intervalId = setInterval(() => {
         loadChatMessages();
       }, 10000); // 10초마다 갱신
+      
+      console.log("채팅 자동 갱신 시작됨");
     }
     
     return () => {
-      if (intervalId) clearInterval(intervalId);
+      if (intervalId) {
+        clearInterval(intervalId);
+        console.log("채팅 자동 갱신 중지됨");
+      }
     };
   }, [gameStarted, isSaved, autoRefresh, loadChatMessages]);
 
