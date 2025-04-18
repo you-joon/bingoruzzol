@@ -541,6 +541,7 @@ export default function GameClient() {
         {showShareMessage && (
           <div className="fixed top-5 right-5 bg-green-500 text-white px-4 py-3 rounded shadow-lg transition-opacity duration-300 z-50">
             <p className="font-medium">URL이 클립보드에 복사되었습니다!</p>
+            <p className="text-xs mt-1 break-all">{shareUrl}</p>
           </div>
         )}
         
