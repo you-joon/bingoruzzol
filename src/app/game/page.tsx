@@ -624,7 +624,7 @@ export default function Game() {
         {comment && searchParams.get('state') && (
           <div className="mb-4 p-3 bg-purple-100 text-purple-800 rounded">
             <p className="font-bold">{playerName}의 코멘트:</p>
-            <p className="italic">"{comment}"</p>
+            <p className="italic">&quot;{comment}&quot;</p>
           </div>
         )}
         
