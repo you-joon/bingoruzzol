@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -29,6 +29,61 @@ export default function GameClient() {
   const [showShareMessage, setShowShareMessage] = useState<boolean>(false);
   const [playerName, setPlayerName] = useState<string>("");
   const [comment, setComment] = useState<string>("");
+  const [chatMessages, setChatMessages] = useState<Array<{name: string, message: string, timestamp: string}>>([]);
+  const [newMessage, setNewMessage] = useState<string>("");
+  const [chatVisible, setChatVisible] = useState<boolean>(true);
+  const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
+  const [lastRefreshTime, setLastRefreshTime] = useState<string>("");
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  // 색상 해시 함수 - 사용자 이름에 따라 일관된 색상 생성
+  const getColorForName = (name: string) => {
+    // 미리 정의된 말풍선 색상 (부드러운 파스텔 계열)
+    const colors = [
+      { bg: 'bg-blue-100', text: 'text-blue-800' },
+      { bg: 'bg-green-100', text: 'text-green-800' },
+      { bg: 'bg-purple-100', text: 'text-purple-800' },
+      { bg: 'bg-yellow-100', text: 'text-yellow-800' },
+      { bg: 'bg-pink-100', text: 'text-pink-800' },
+      { bg: 'bg-indigo-100', text: 'text-indigo-800' },
+      { bg: 'bg-red-100', text: 'text-red-800' },
+      { bg: 'bg-orange-100', text: 'text-orange-800' },
+    ];
+    
+    // 이름에서 간단한 해시 생성
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+      hash = ((hash << 5) - hash) + name.charCodeAt(i);
+      hash = hash & hash; // 32bit 정수로 변환
+    }
+    
+    // 해시값을 색상 배열의 인덱스로 변환
+    const colorIndex = Math.abs(hash) % colors.length;
+    return colors[colorIndex];
+  };
+
+  // 메시지 불러오기 함수
+  const loadChatMessages = () => {
+    const storedMessages = localStorage.getItem('chat_messages');
+    if (storedMessages) {
+      setChatMessages(JSON.parse(storedMessages));
+      // 상태 업데이트 후 스크롤을 아래로 이동시키기 위해 다음 렌더링 사이클에 실행
+      setTimeout(() => scrollToBottom(), 100);
+    }
+    setLastRefreshTime(new Date().toLocaleTimeString());
+  };
+
+  // 메시지가 추가되거나 로드될 때 스크롤을 아래로 이동
+  const scrollToBottom = () => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  };
+
+  // 채팅 메시지 변경될 때마다 스크롤 아래로
+  useEffect(() => {
+    scrollToBottom();
+  }, [chatMessages]);
 
   // URL에서 게임 상태 불러오기
   useEffect(() => {
@@ -38,6 +93,7 @@ export default function GameClient() {
         const state = searchParams.get('state');
         const name = searchParams.get('name');
         const msg = searchParams.get('comment');
+        const chatMsg = searchParams.get('chat');
         
         if (state) {
           // URL에서 상태를 불러옴
@@ -69,6 +125,36 @@ export default function GameClient() {
           
           // 로컬 스토리지에도 저장
           localStorage.setItem(STORAGE_KEY, JSON.stringify(decodedState));
+          
+          // 채팅 메시지가 있는 경우 처리
+          if (chatMsg) {
+            try {
+              const decodedChat = JSON.parse(atob(chatMsg));
+              if (decodedChat.name && decodedChat.message) {
+                const newChatMessage = {
+                  name: decodedChat.name,
+                  message: decodedChat.message,
+                  timestamp: new Date().toLocaleTimeString()
+                };
+                
+                // 로컬 스토리지에서 기존 채팅 내역 로드
+                const storedMessages = localStorage.getItem('chat_messages');
+                let messages = storedMessages ? JSON.parse(storedMessages) : [];
+                
+                // 새 메시지 추가
+                messages.push(newChatMessage);
+                
+                // 로컬 스토리지에 저장 및 상태 업데이트
+                localStorage.setItem('chat_messages', JSON.stringify(messages));
+                setChatMessages(messages);
+              }
+            } catch (error) {
+              console.error("채팅 메시지 파싱 오류:", error);
+            }
+          }
+          
+          // 채팅 메시지 로드
+          loadChatMessages();
           
           return; // URL에서 불러왔으므로 로컬 스토리지 로드는 건너뛰기
         }
@@ -110,6 +196,9 @@ export default function GameClient() {
         } else {
           setShowEmptyWarning(true);
         }
+        
+        // 채팅 메시지 로드
+        loadChatMessages();
       } catch (error) {
         console.error("게임 상태 로드 중 오류:", error);
       }
@@ -468,10 +557,204 @@ export default function GameClient() {
     setComment("");
   };
 
+  // 채팅 메시지 전송
+  const sendChatMessage = () => {
+    if (!newMessage.trim() || !playerName) return;
+    
+    const messageObj = {
+      name: playerName,
+      message: newMessage.trim(),
+      timestamp: new Date().toLocaleTimeString()
+    };
+    
+    // 메시지 추가
+    const updatedMessages = [...chatMessages, messageObj];
+    setChatMessages(updatedMessages);
+    
+    // 로컬 스토리지에 저장
+    localStorage.setItem('chat_messages', JSON.stringify(updatedMessages));
+    
+    // 메시지 초기화
+    setNewMessage("");
+    
+    // 스크롤 아래로 이동
+    setTimeout(() => scrollToBottom(), 100);
+    
+    // URL 생성 및 공유
+    try {
+      // 상태를 Base64로 인코딩
+      const stateToShare = {
+        gameStarted,
+        winCondition,
+        bingoBoard,
+        clickedCells,
+        completedLines,
+        isGameOver,
+        isSaved,
+        gameStartTime,
+        gameEndTime,
+        completedLineIndices
+      };
+      const encodedState = btoa(JSON.stringify(stateToShare));
+      
+      // 채팅 메시지 인코딩
+      const chatData = {
+        name: playerName,
+        message: newMessage.trim()
+      };
+      const encodedChat = btoa(JSON.stringify(chatData));
+      
+      // 이름 인코딩
+      const encodedName = encodeURIComponent(playerName);
+      
+      // 현재 URL을 기반으로 공유 URL 생성
+      const baseUrl = window.location.origin + window.location.pathname;
+      const fullUrl = `${baseUrl}?state=${encodedState}&name=${encodedName}&chat=${encodedChat}`;
+      
+      // 클립보드에 복사
+      navigator.clipboard.writeText(fullUrl).then(() => {
+        setShareUrl(fullUrl);
+        setShowShareMessage(true);
+        setTimeout(() => setShowShareMessage(false), 3000);
+      }).catch(err => {
+        console.error('클립보드 복사 실패:', err);
+        // 복사 실패 시 URL을 보여주고 수동으로 복사하도록 함
+        setShareUrl(fullUrl);
+        setShowShareMessage(true);
+      });
+    } catch (error) {
+      console.error("메시지 공유 중 오류:", error);
+    }
+  };
+
+  // 채팅창 토글
+  const toggleChat = () => {
+    setChatVisible(!chatVisible);
+  };
+
+  // 자동 메시지 갱신
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+    
+    if (gameStarted && isSaved && autoRefresh) {
+      intervalId = setInterval(() => {
+        loadChatMessages();
+      }, 10000); // 10초마다 갱신
+    }
+    
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [gameStarted, isSaved, autoRefresh]);
+
+  // 자동 갱신 토글
+  const toggleAutoRefresh = () => {
+    setAutoRefresh(!autoRefresh);
+  };
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-b from-blue-100 to-purple-100">
       <div className="w-full max-w-md bg-white p-6 rounded-lg shadow-lg">
         <h1 className="text-2xl font-bold text-center text-blue-600 mb-4">5x5 빙고 게임</h1>
+        
+        {/* 채팅 섹션 (게임 시작 후에만 표시) */}
+        {gameStarted && isSaved && (
+          <div className="mb-4">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="text-lg font-semibold text-gray-700">채팅</h2>
+              <div className="flex items-center space-x-2">
+                <button 
+                  onClick={loadChatMessages}
+                  className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200"
+                  title="메시지 수동 갱신"
+                >
+                  갱신
+                </button>
+                <button 
+                  onClick={toggleAutoRefresh}
+                  className={`text-xs px-2 py-1 rounded ${
+                    autoRefresh 
+                      ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                  title={autoRefresh ? "자동 갱신 중지" : "자동 갱신 시작"}
+                >
+                  {autoRefresh ? '자동 갱신 켜짐' : '자동 갱신 꺼짐'}
+                </button>
+                <button 
+                  onClick={toggleChat}
+                  className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                >
+                  {chatVisible ? '숨기기' : '보이기'}
+                </button>
+              </div>
+            </div>
+            
+            {chatVisible && (
+              <>
+                <div 
+                  ref={chatContainerRef}
+                  className="border rounded-lg p-2 mb-2 h-32 overflow-y-auto bg-gray-50"
+                >
+                  {chatMessages.length === 0 ? (
+                    <p className="text-gray-400 text-center text-sm italic">
+                      아직 채팅 메시지가 없습니다.
+                    </p>
+                  ) : (
+                    chatMessages.map((msg, index) => {
+                      // 사용자 이름에 따라 색상 결정
+                      const isCurrentUser = msg.name === playerName;
+                      const colorStyle = isCurrentUser 
+                        ? { bg: 'bg-blue-100', text: 'text-blue-800' } 
+                        : getColorForName(msg.name);
+                      
+                      return (
+                        <div key={index} className={`mb-1 ${isCurrentUser ? 'text-right' : 'text-left'}`}>
+                          <span className={`inline-block px-2 py-1 rounded-lg text-sm ${colorStyle.bg} ${colorStyle.text}`}>
+                            <span className="font-bold">{msg.name}</span>: {msg.message}
+                            <span className="text-xs text-gray-500 ml-1">{msg.timestamp}</span>
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+                
+                <div className="text-xs text-gray-500 mb-2 flex justify-between">
+                  <span>
+                    {autoRefresh ? '10초마다 자동 갱신 중' : '자동 갱신 꺼짐'}
+                  </span>
+                  <span>
+                    마지막 갱신: {lastRefreshTime || '없음'}
+                  </span>
+                </div>
+                
+                <div className="flex">
+                  <input
+                    type="text"
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    placeholder="메시지를 입력하세요..."
+                    className="flex-1 p-2 border rounded-l"
+                    onKeyPress={(e) => e.key === 'Enter' && sendChatMessage()}
+                  />
+                  <button
+                    onClick={sendChatMessage}
+                    className="px-3 py-2 bg-blue-500 text-white rounded-r hover:bg-blue-600"
+                  >
+                    전송
+                  </button>
+                </div>
+                
+                {showShareMessage && (
+                  <p className="mt-2 text-xs text-gray-600">
+                    메시지 URL이 클립보드에 복사되었습니다. 이 URL을 상대방에게 보내세요.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        )}
         
         {!gameStarted && !isSaved && (
           <div className="mb-4">
@@ -564,7 +847,7 @@ export default function GameClient() {
           </div>
         )}
         
-        {showShareMessage && (
+        {showShareMessage && !chatVisible && (
           <div className="text-center mb-4 p-2 bg-green-100 text-green-800 rounded text-sm">
             <p>URL이 클립보드에 복사되었습니다!</p>
             <p className="text-xs mt-1 break-all">{shareUrl}</p>
@@ -685,4 +968,4 @@ export default function GameClient() {
       </div>
     </div>
   );
-} 
+}
