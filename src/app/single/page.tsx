@@ -1,10 +1,10 @@
 import { Suspense } from "react";
-import MultiplayerGame from "./MultiplayerGame";
+import SinglePlayerGame from "./SinglePlayerGame";
 
 export default function Page() {
   return (
     <Suspense fallback={<div>로딩 중입니다...</div>}>
-      <MultiplayerGame />
+      <SinglePlayerGame />
     </Suspense>
   );
 } 

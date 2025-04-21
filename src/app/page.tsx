@@ -10,15 +10,24 @@ export default function Home() {
         </h1>
         
         <p className="text-lg mb-8 text-center text-gray-700">
-          5x5 빙고 게임을 시작해보세요!
+          게임 모드를 선택해주세요!
         </p>
         
-        <Link 
-          href="/game" 
-          className="w-full px-6 py-3 bg-blue-500 text-white font-medium rounded-lg shadow hover:bg-blue-600 transition-colors text-center"
-        >
-          게임 시작하기
-        </Link>
+        <div className="flex flex-col w-full space-y-4">
+          <Link 
+            href="/single" 
+            className="w-full px-6 py-4 bg-blue-500 text-white font-medium rounded-lg shadow hover:bg-blue-600 transition-colors text-center"
+          >
+            1인용 게임
+          </Link>
+          
+          <Link 
+            href="/game" 
+            className="w-full px-6 py-4 bg-purple-500 text-white font-medium rounded-lg shadow hover:bg-purple-600 transition-colors text-center"
+          >
+            다인용 게임
+          </Link>
+        </div>
       </main>
     </div>
   );

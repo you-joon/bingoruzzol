@@ -636,12 +636,20 @@ export default function GameClient() {
                   저장하기
                 </button>
               ) : (
-                <button
-                  onClick={startGame}
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 min-w-[100px]"
-                >
-                  게임 시작
-                </button>
+                <>
+                  <button
+                    onClick={startGame}
+                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 min-w-[100px]"
+                  >
+                    게임 시작
+                  </button>
+                  <button
+                    onClick={shareGameState}
+                    className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 min-w-[100px]"
+                  >
+                    빙고판 공유
+                  </button>
+                </>
               )}
               <button
                 onClick={newGame}
