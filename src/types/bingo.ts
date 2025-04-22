@@ -8,6 +8,8 @@ export interface BingoRoom {
   game_status: GameStatus;
   current_turn: string | null;
   last_updated: string;
+  win_condition: number; // 추가: 승리 조건 (몇 줄)
+  completed_players?: string[]; // 추가: 빙고 완료한 플레이어 ID 목록
 }
 
 // 플레이어 타입
@@ -18,6 +20,8 @@ export interface RoomPlayer {
   is_host: boolean;
   turn_order: number | null;
   bingo_lines: number;
+  bingo_completed?: boolean; // 빙고 완료 여부
+  rank?: number; // 순위
 }
 
 // 빙고 보드 타입

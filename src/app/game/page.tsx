@@ -1,10 +1,11 @@
-import { Suspense } from "react";
-import MultiplayerGame from "./MultiplayerGame";
+'use client';
+import dynamic from 'next/dynamic';
+
+const MultiplayerGame = dynamic(() => import('./MultiplayerGame'), {
+  ssr: false,
+  loading: () => <div>로딩 중입니다...</div>
+});
 
 export default function Page() {
-  return (
-    <Suspense fallback={<div>로딩 중입니다...</div>}>
-      <MultiplayerGame />
-    </Suspense>
-  );
-} 
+  return <MultiplayerGame />;
+}

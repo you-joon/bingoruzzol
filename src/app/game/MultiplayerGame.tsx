@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useBingoGame } from '@/hooks/useBingoGame';
-import { useSearchParams } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 
 interface GameState {
@@ -28,6 +27,8 @@ export default function MultiplayerGame() {
   const [roomId, setRoomId] = useState<string | null>(null);
   const [showJoinForm, setShowJoinForm] = useState(false);
   const [inputRoomId, setInputRoomId] = useState('');
+  // 승리 조건 상태 (3줄 기본값)
+  const [winCondition, setWinCondition] = useState(3);
   const [gameState, setGameState] = useState<GameState>({
     board: Array(25).fill(''),
     checkedCells: Array(25).fill(false),
@@ -40,9 +41,13 @@ export default function MultiplayerGame() {
   const [bingoBoard, setBingoBoard] = useState<string[]>(Array(25).fill(''));
   const [checkedCells, setCheckedCells] = useState<boolean[]>(Array(25).fill(false));
   const [roomList, setRoomList] = useState<Room[]>([]);
-    // 컴포넌트 내부, 다른 상태 변수 선언 근처에 추가
+  // 컴포넌트 내부, 다른 상태 변수 선언 근처에 추가
   const prevGameStatus = useRef<string | undefined>(undefined);
   const [hasClickedThisTurn, setHasClickedThisTurn] = useState(false);
+  // 빙고 라인 관련 상태 추가
+  const [completedLines, setCompletedLines] = useState<number[][]>([]);
+  // 내 순위
+  const [myRank, setMyRank] = useState<number | null>(null);
 
   const {
     room,
@@ -55,8 +60,7 @@ export default function MultiplayerGame() {
     joinRoom,
     saveBoard,
     startGame,
-    // submitWord,     // 제거 또는 주석 처리
-    submitCell,        // 새로 추가
+    submitCell,
     messages,
     sendMessage,
     leaveRoom,
@@ -66,7 +70,9 @@ export default function MultiplayerGame() {
     checkDuplicateName,
     loadPlayerBoard,
     getOrCreatePlayerBoard,
-    pollRoomInfo
+    pollRoomInfo,
+    checkBingoStatus, // 새로 추가된 함수
+    resetGame         // 새로 추가된 함수
   } = useBingoGame(roomId);
 
   // 방 목록 가져오기
@@ -101,6 +107,19 @@ export default function MultiplayerGame() {
         
         if (room.game_status === 'playing' && prevGameStatus.current !== 'playing') {
           console.log('게임이 시작되었습니다! 빙고판을 초기화합니다.');
+          // 게임 시작 시 필요한 초기화
+          setCompletedLines([]);
+          setMyRank(null);
+        } else if (room.game_status === 'finished' && prevGameStatus.current === 'playing') {
+          console.log('게임이 종료되었습니다!');
+          // 게임 종료 시 필요한 처리
+        } else if (prevGameStatus.current === 'playing' && room.game_status === 'waiting') {
+          console.log('게임이 중단되었습니다. 대기 화면으로 돌아갑니다.');
+          // 빙고판 초기화
+          setBingoBoard(Array(25).fill(''));
+          setCheckedCells(Array(25).fill(false));
+          setCompletedLines([]);
+          setMyRank(null);
         }
         
         // 현재 상태를 이전 상태로 저장
@@ -173,6 +192,111 @@ export default function MultiplayerGame() {
     }
   }, [room?.current_turn, currentPlayer?.id]);
 
+  // 게임 시작 시 빙고판 초기화
+  useEffect(() => {
+    const initializeBoard = async () => {
+      console.log('빙고판 초기화 검사 - 현재 방 상태:', room?.game_status);
+      console.log('현재 플레이어:', currentPlayer?.player_name);
+      
+      if (room?.game_status === 'playing' && currentPlayer) {
+        console.log('게임 상태가 playing으로 변경됨 - 빙고판 초기화 시작');
+        
+        // 이미 생성된 빙고판이 있으면 유지
+        if (!bingoBoard.every(cell => cell === '')) {
+          console.log('이미 빙고판이 있음:', bingoBoard);
+          return;
+        }
+        
+        try {
+          // getOrCreatePlayerBoard 함수 호출하여 빙고판 가져오기 또는 생성
+          const { board, isNew } = await getOrCreatePlayerBoard(currentPlayer.id);
+          console.log(isNew ? '새 빙고판 생성됨:' : '기존 빙고판 로드됨:', board);
+          
+          // 빙고판 상태 업데이트
+          setBingoBoard(board);
+          // 체크된 셀 초기화
+          setCheckedCells(Array(25).fill(false));
+          // 완료된 라인 초기화
+          setCompletedLines([]);
+        } catch (error) {
+          console.error('빙고판 초기화 중 오류:', error);
+          
+          // 오류 발생 시 로컬에서만 빙고판 생성 (백업 메커니즘)
+          console.log('오류 발생으로 로컬 빙고판 생성');
+          const numbers = Array.from({ length: 50 }, (_, i) => i + 1); // 1~50 범위로 수정
+          const shuffled = numbers.sort(() => Math.random() - 0.5).slice(0, 25); // 25개만 선택
+          const newBoard = shuffled.map(n => n.toString());
+          setBingoBoard(newBoard);
+        }
+      }
+    };
+    
+    initializeBoard();
+  }, [room, currentPlayer]);
+
+  // 다른 플레이어의 선택을 내 보드에도 반영
+  useEffect(() => {
+    if (room?.last_cell_value && currentPlayer) {
+      const newCheckedCells = [...checkedCells];
+      let hasChanged = false;
+      let hasNumber = false;
+
+      bingoBoard.forEach((value, index) => {
+        if (value === room.last_cell_value) {
+          hasNumber = true;
+          if (!checkedCells[index]) {
+            newCheckedCells[index] = true;
+            hasChanged = true;
+          }
+        }
+      });
+
+      if (hasChanged) {
+        setCheckedCells(newCheckedCells);
+        console.log(`"${room.last_cell_value}" 셀을 자동 체크함`);
+        
+        // 빙고 라인 체크
+        setTimeout(() => {
+          checkBingoLines();
+        }, 100);
+      }
+      
+      // 해당 숫자가 내 보드에 없으면 로그만 남김
+      if (!hasNumber) {
+        console.log(`"${room.last_cell_value}" 숫자가 내 빙고판에 없습니다.`);
+      }
+    }
+  }, [room?.last_cell_value]);
+
+  // 빙고 라인 체크 함수
+  const checkBingoLines = useCallback(async () => {
+    if (!currentPlayer || !room) return;
+    
+    // 빙고 상태 체크
+    const result = await checkBingoStatus(currentPlayer.id, checkedCells, bingoBoard);
+    
+    if (result.completed) {
+      // 빙고 완료!
+      setCompletedLines(result.lines);
+      
+      if (result.rank && myRank === null) {
+        setMyRank(result.rank);
+        // 빙고 달성 알림
+        alert(`빙고 완료! ${result.rank}위를 달성했습니다!`);
+      }
+    } else {
+      // 빙고는 아직 완료되지 않았지만 완성된 라인은 표시
+      setCompletedLines(result.lines);
+    }
+  }, [checkedCells, currentPlayer, room, myRank, bingoBoard]);
+
+  // 체크된 셀이 변경될 때마다 빙고 라인 체크
+  useEffect(() => {
+    if (room?.game_status === 'playing' && !currentPlayer?.bingo_completed) {
+      checkBingoLines();
+    }
+  }, [checkedCells, room?.game_status, currentPlayer?.bingo_completed]);
+
   const handleCreateRoom = async () => {
     if (!playerName.trim()) {
       alert('플레이어 이름을 입력해주세요.');
@@ -221,7 +345,6 @@ export default function MultiplayerGame() {
         
         // 2. 마지막 플레이어가 나갈 경우 방 관련 데이터 정리
         if (players.length <= 1) {
-          // useBingoGame 훅에 deleteRoom 함수를 추가해야 합니다
           await deleteRoom(roomId);
         }
         
@@ -229,6 +352,8 @@ export default function MultiplayerGame() {
         setRoomId(null);
         setBingoBoard(Array(25).fill(''));
         setCheckedCells(Array(25).fill(false));
+        setCompletedLines([]);
+        setMyRank(null);
         
         // 4. 홈/로비 화면으로 리다이렉트
         router.push('/game');
@@ -258,128 +383,49 @@ export default function MultiplayerGame() {
     setNewMessage('');
   };
 
-  // 게임 시작 시 빙고판 초기화
-  useEffect(() => {
-    const initializeBoard = async () => {
-      console.log('빙고판 초기화 검사 - 현재 방 상태:', room?.game_status);
-      console.log('현재 플레이어:', currentPlayer?.player_name);
-      
-      if (room?.game_status === 'playing' && currentPlayer) {
-        console.log('게임 상태가 playing으로 변경됨 - 빙고판 초기화 시작');
-        
-        // 이미 생성된 빙고판이 있으면 유지
-        if (!bingoBoard.every(cell => cell === '')) {
-          console.log('이미 빙고판이 있음:', bingoBoard);
-          return;
-        }
-        
-        try {
-          // getOrCreatePlayerBoard 함수 호출하여 빙고판 가져오기 또는 생성
-          const { board, isNew } = await getOrCreatePlayerBoard(currentPlayer.id);
-          console.log(isNew ? '새 빙고판 생성됨:' : '기존 빙고판 로드됨:', board);
-          
-          // 빙고판 상태 업데이트
-          setBingoBoard(board);
-        } catch (error) {
-          console.error('빙고판 초기화 중 오류:', error);
-          
-          // 오류 발생 시 로컬에서만 빙고판 생성 (백업 메커니즘)
-          console.log('오류 발생으로 로컬 빙고판 생성');
-          const numbers = Array.from({ length: 25 }, (_, i) => i + 1);
-          const shuffled = numbers.sort(() => Math.random() - 0.5);
-          const newBoard = shuffled.map(n => n.toString());
-          setBingoBoard(newBoard);
-        }
-      }
-    };
-    
-    initializeBoard();
-  }, [room, currentPlayer]);
-
-  // room 상태 변경 감지 시 확인용 로그
-  useEffect(() => {
-    if (room) {
-      // 상태가 실제로 변경되었을 때만 메시지 표시
-      if (prevGameStatus.current !== room.game_status) {
-        console.log('방 상태 업데이트:', room.game_status);
-        
-        if (room.game_status === 'playing' && prevGameStatus.current !== 'playing') {
-          console.log('게임이 시작되었습니다! 빙고판을 초기화합니다.');
-        } else if (prevGameStatus.current === 'playing' && room.game_status === 'waiting') {
-          console.log('게임이 중단되었습니다. 대기 화면으로 돌아갑니다.');
-          // 빙고판 초기화
-          setBingoBoard(Array(25).fill(''));
-          setCheckedCells(Array(25).fill(false));
-        }
-        
-        // 현재 상태를 이전 상태로 저장
-        prevGameStatus.current = room.game_status;
-      }
-      
-      // 마지막으로 선택된 셀 정보가 있고, 현재 턴이 아닌 경우에만 처리
-      // (자신이 선택한 셀은 이미 handleCellClick에서 처리됨)
-      if (
-        room.last_cell_index !== undefined && 
-        room.last_cell_value && 
-        room.current_turn !== currentPlayer?.id
-      ) {
-        // 마지막 선택된 셀 정보 가져오기
-        const lastCellIndex = room.last_cell_index;
-        
-        // 내 빙고판에서 같은 값을 가진 셀을 체크
-        bingoBoard.forEach((value, index) => {
-          if (value === room.last_cell_value) {
-            const newCheckedCells = [...checkedCells];
-            newCheckedCells[index] = true;
-            setCheckedCells(newCheckedCells);
-            
-            console.log(`다른 플레이어가 선택한 "${room.last_cell_value}" 셀이 내 빙고판에 반영되었습니다.`);
-          }
-        });
-      }
-    }
-  }, [room, currentPlayer?.id]);
-
-  // 다른 플레이어의 선택을 내 보드에도 반영
-  useEffect(() => {
-    if (room?.last_cell_value && currentPlayer) {
-      const newCheckedCells = [...checkedCells];
-      let hasChanged = false;
-
-      bingoBoard.forEach((value, index) => {
-        if (value === room.last_cell_value && !checkedCells[index]) {
-          newCheckedCells[index] = true;
-          hasChanged = true;
-        }
-      });
-
-      if (hasChanged) {
-        setCheckedCells(newCheckedCells);
-        console.log(`"${room.last_cell_value}" 셀을 자동 체크함`);
-      }
-    }
-  }, [room?.last_cell_value]);
-
   // 셀 클릭 처리
   const handleCellClick = async (index: number) => {
-  if (room?.game_status !== 'playing' || room.current_turn !== currentPlayer?.id) return;
+    if (room?.game_status !== 'playing' || 
+        room.current_turn !== currentPlayer?.id || 
+        currentPlayer.bingo_completed) return;
 
-  // 🔒 이미 클릭한 경우 무시
-  if (hasClickedThisTurn) return;
+    // 이미 클릭한 경우 무시
+    if (hasClickedThisTurn || checkedCells[index]) return;
 
-  try {
-    await submitCell(index, bingoBoard[index]);
+    try {
+      await submitCell(index, bingoBoard[index]);
 
-    const newCheckedCells = [...checkedCells];
-    newCheckedCells[index] = true;
-    setCheckedCells(newCheckedCells);
+      const newCheckedCells = [...checkedCells];
+      newCheckedCells[index] = true;
+      setCheckedCells(newCheckedCells);
 
-    setHasClickedThisTurn(true); // 🔓 한 번만 허용!
-    console.log(`${currentPlayer.player_name}님이 "${bingoBoard[index]}" 셀을 선택했습니다.`);
-  } catch (err) {
-    console.error('셀 선택 중 오류:', err);
-  }
-};
+      setHasClickedThisTurn(true); // 한 번만 허용!
+      console.log(`${currentPlayer.player_name}님이 "${bingoBoard[index]}" 셀을 선택했습니다.`);
+    } catch (err) {
+      console.error('셀 선택 중 오류:', err);
+    }
+  };
+
+  // 게임 재시작 핸들러
+  const handleResetGame = async () => {
+    if (room?.game_status !== 'finished' && room?.game_status !== 'waiting') {
+      if (!confirm('게임을 재설정하시겠습니까? 현재 진행 중인 게임이 취소됩니다.')) {
+        return;
+      }
+    }
+    
+    const result = await resetGame();
+    if (result) {
+      // 클라이언트 상태 초기화
+      setBingoBoard(Array(25).fill(''));
+      setCheckedCells(Array(25).fill(false));
+      setCompletedLines([]);
+      setMyRank(null);
+      setWinCondition(3);
+    } else {
+      alert('게임 재설정 중 오류가 발생했습니다.');
+    }
+  };
 
   if (loading) {
     return <div className="text-center p-4">로딩 중...</div>;
@@ -523,12 +569,15 @@ export default function MultiplayerGame() {
                       className={`p-2 rounded ${
                         room?.current_turn === player.id
                           ? 'bg-yellow-100'
-                          : 'bg-gray-100'
+                          : player.bingo_completed
+                            ? 'bg-green-100'
+                            : 'bg-gray-100'
                       }`}
                     >
                       {player.player_name}
                       {player.is_host && ' (방장)'}
                       {room?.current_turn === player.id && ' (현재 턴)'}
+                      {player.bingo_completed && player.rank && ` (${player.rank}위)`}
                     </div>
                   ))}
                 </div>
@@ -536,28 +585,70 @@ export default function MultiplayerGame() {
 
               {/* 방장 권한 관련 UI */}
               {currentPlayer?.is_host && room?.game_status === 'waiting' && (
-                <button
-                  onClick={() => {
-                    // 참가자가 2명 미만인 경우 게임 시작 방지
-                    if (players.length < 2) {
-                      alert('최소 2인 이상 시작 가능합니다!');
-                      return;
-                    }
-                    // 충분한 참가자가 있으면 게임 시작
-                    startGame();
-                  }}
-                  className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 mb-4"
-                >
-                  게임 시작
-                </button>
+                <div className="mb-4">
+                  <div className="mb-3">
+                    <label className="block text-gray-700 mb-2">
+                      승리 조건 (완성해야 할 빙고 줄 수):
+                    </label>
+                    <div className="flex space-x-2">
+                      {[3, 4, 5].map((lines) => (
+                        <button
+                          key={lines}
+                          onClick={() => setWinCondition(lines)}
+                          className={`px-4 py-2 rounded ${
+                            winCondition === lines
+                              ? 'bg-blue-500 text-white'
+                              : 'bg-gray-200 text-gray-700'
+                          }`}
+                        >
+                          {lines}줄
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={() => {
+                      // 참가자가 2명 미만인 경우 게임 시작 방지
+                      if (players.length < 2) {
+                        alert('최소 2인 이상 시작 가능합니다!');
+                        return;
+                      }
+                      // 충분한 참가자가 있으면 게임 시작
+                      startGame(winCondition);
+                    }}
+                    className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                  >
+                    게임 시작
+                  </button>
+                </div>
+              )}
+
+              {/* 게임 종료 시 재시작 버튼 */}
+              {currentPlayer?.is_host && room?.game_status === 'finished' && (
+                <div className="mb-4">
+                  <button
+                    onClick={handleResetGame}
+                    className="w-full bg-green-500 text-white p-2 rounded hover:bg-green-600"
+                  >
+                    새 게임 시작하기
+                  </button>
+                </div>
               )}
 
               {room?.game_status === 'playing' && (
                 <div className="mb-4">
-                  {room.current_turn === currentPlayer?.id ? (
+                  {room.current_turn === currentPlayer?.id && !currentPlayer?.bingo_completed ? (
                     <div className="p-3 bg-green-100 rounded text-center">
                       <p className="text-lg font-bold text-green-800">당신의 턴입니다!</p>
                       <p className="text-sm text-green-600">빙고판에서 원하는 항목을 선택하세요.</p>
+                    </div>
+                  ) : currentPlayer?.bingo_completed ? (
+                    <div className="p-3 bg-blue-100 rounded text-center">
+                      <p className="text-lg font-bold text-blue-800">
+                        빙고 완료! ({myRank}위)
+                      </p>
+                      <p className="text-sm text-blue-600">다른 플레이어들이 게임을 완료할 때까지 관전합니다.</p>
                     </div>
                   ) : (
                     <div className="p-3 bg-gray-100 rounded text-center">
@@ -567,6 +658,11 @@ export default function MultiplayerGame() {
                       <p className="text-sm text-gray-600">상대방이 항목을 선택할 때까지 기다려주세요.</p>
                     </div>
                   )}
+                  
+                  {/* 승리 조건 표시 */}
+                  <div className="mt-2 text-center text-sm text-gray-600">
+                    승리 조건: {room.win_condition}줄 빙고
+                  </div>
                   
                   {/* 마지막으로 선택된 항목 표시 */}
                   {room.last_cell_value && (
@@ -582,24 +678,35 @@ export default function MultiplayerGame() {
 
               {/* 빙고 보드 - 클릭 가능 상태 표시 */}
               {room?.game_status === 'playing' && (
-                <div className={`grid grid-cols-5 gap-1 mb-4 ${room.current_turn !== currentPlayer?.id ? 'opacity-80' : ''}`}>
-                  {bingoBoard.map((value, index) => (
-                    <div
-                      key={index}
-                      onClick={() => handleCellClick(index)}
-                      className={`
-                        aspect-square flex items-center justify-center
-                        border rounded text-lg font-bold
-                        ${checkedCells[index] ? 'bg-blue-500 text-white' : 'bg-gray-100'}
-                        ${room.current_turn === currentPlayer?.id && !checkedCells[index] 
-                          ? 'cursor-pointer hover:bg-blue-100' 
-                          : 'cursor-default'}
-                        transition-colors
-                      `}
-                    >
-                      {value}
-                    </div>
-                  ))}
+                <div className={`grid grid-cols-5 gap-1 mb-4 ${room.current_turn !== currentPlayer?.id || currentPlayer?.bingo_completed ? 'opacity-80' : ''}`}>
+                  {bingoBoard.map((value, index) => {
+                    // 이 셀이 완성된 라인에 포함되어 있는지 확인
+                    const isPartOfCompletedLine = completedLines.some(line => 
+                      line.includes(index)
+                    );
+                    
+                    return (
+                      <div
+                        key={index}
+                        onClick={() => handleCellClick(index)}
+                        className={`
+                          aspect-square flex items-center justify-center
+                          border rounded text-lg font-bold
+                          ${checkedCells[index] 
+                            ? isPartOfCompletedLine 
+                              ? 'bg-green-500 text-white' // 빙고 라인 셀
+                              : 'bg-blue-500 text-white'  // 선택된 셀
+                            : 'bg-gray-100'} // 미선택 셀
+                          ${room.current_turn === currentPlayer?.id && !checkedCells[index] && !currentPlayer.bingo_completed
+                            ? 'cursor-pointer hover:bg-blue-100' 
+                            : 'cursor-default'}
+                          transition-colors
+                        `}
+                      >
+                        {value}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
