@@ -236,7 +236,7 @@ export default function MultiplayerGame() {
 
   // 다른 플레이어의 선택을 내 보드에도 반영
   useEffect(() => {
-    if (room?.last_cell_value && currentPlayer) {
+    if ((room as any)?.last_cell_value && currentPlayer) {
       const newCheckedCells = [...checkedCells];
       let hasChanged = false;
       let hasNumber = false;
