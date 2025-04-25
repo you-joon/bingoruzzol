@@ -102,18 +102,18 @@ export default function MultiplayerGame() {
   useEffect(() => {
     if (room) {
       // 상태가 실제로 변경되었을 때만 메시지 표시
-      if (prevGameStatus.current !== room.game_status) {
-        console.log('방 상태 업데이트:', room.game_status);
+      if (prevGameStatus.current !== (room as any).game_status) {
+        console.log('방 상태 업데이트:', (room as any).game_status);
         
-        if (room.game_status === 'playing' && prevGameStatus.current !== 'playing') {
+        if ((room as any).game_status === 'playing' && prevGameStatus.current !== 'playing') {
           console.log('게임이 시작되었습니다! 빙고판을 초기화합니다.');
           // 게임 시작 시 필요한 초기화
           setCompletedLines([]);
           setMyRank(null);
-        } else if (room.game_status === 'finished' && prevGameStatus.current === 'playing') {
+        } else if ((room as any).game_status === 'finished' && prevGameStatus.current === 'playing') {
           console.log('게임이 종료되었습니다!');
           // 게임 종료 시 필요한 처리
-        } else if (prevGameStatus.current === 'playing' && room.game_status === 'waiting') {
+        } else if (prevGameStatus.current === 'playing' && (room as any).game_status === 'waiting') {
           console.log('게임이 중단되었습니다. 대기 화면으로 돌아갑니다.');
           // 빙고판 초기화
           setBingoBoard(Array(25).fill(''));
@@ -123,10 +123,10 @@ export default function MultiplayerGame() {
         }
         
         // 현재 상태를 이전 상태로 저장
-        prevGameStatus.current = room.game_status;
+        prevGameStatus.current = (room as any).game_status;
       }
     }
-  }, [room?.game_status]);
+  }, [(room as any)?.game_status]);
 
   // 브라우저 종료 시 방 나가기
   useEffect(() => {
@@ -187,18 +187,18 @@ export default function MultiplayerGame() {
   }, [roomId]);
 
   useEffect(() => {
-    if (room?.current_turn === currentPlayer?.id) {
+    if ((room as any)?.current_turn === currentPlayer?.id) {
       setHasClickedThisTurn(false);
     }
-  }, [room?.current_turn, currentPlayer?.id]);
+  }, [(room as any)?.current_turn, currentPlayer?.id]);
 
   // 게임 시작 시 빙고판 초기화
   useEffect(() => {
     const initializeBoard = async () => {
-      console.log('빙고판 초기화 검사 - 현재 방 상태:', room?.game_status);
+      console.log('빙고판 초기화 검사 - 현재 방 상태:', (room as any)?.game_status);
       console.log('현재 플레이어:', currentPlayer?.player_name);
       
-      if (room?.game_status === 'playing' && currentPlayer) {
+      if ((room as any)?.game_status === 'playing' && currentPlayer) {
         console.log('게임 상태가 playing으로 변경됨 - 빙고판 초기화 시작');
         
         // 이미 생성된 빙고판이 있으면 유지
@@ -253,7 +253,7 @@ export default function MultiplayerGame() {
 
       if (hasChanged) {
         setCheckedCells(newCheckedCells);
-        console.log(`"${room.last_cell_value}" 셀을 자동 체크함`);
+        console.log(`"${(room as any).last_cell_value}" 셀을 자동 체크함`);
         
         // 빙고 라인 체크
         setTimeout(() => {
@@ -263,10 +263,10 @@ export default function MultiplayerGame() {
       
       // 해당 숫자가 내 보드에 없으면 로그만 남김
       if (!hasNumber) {
-        console.log(`"${room.last_cell_value}" 숫자가 내 빙고판에 없습니다.`);
+        console.log(`"${(room as any).last_cell_value}" 숫자가 내 빙고판에 없습니다.`);
       }
     }
-  }, [room?.last_cell_value]);
+  }, [(room as any)?.last_cell_value]);
 
   // 빙고 라인 체크 함수
   const checkBingoLines = useCallback(async () => {
@@ -292,10 +292,10 @@ export default function MultiplayerGame() {
 
   // 체크된 셀이 변경될 때마다 빙고 라인 체크
   useEffect(() => {
-    if (room?.game_status === 'playing' && !currentPlayer?.bingo_completed) {
+    if ((room as any)?.game_status === 'playing' && !currentPlayer?.bingo_completed) {
       checkBingoLines();
     }
-  }, [checkedCells, room?.game_status, currentPlayer?.bingo_completed]);
+  }, [checkedCells, (room as any)?.game_status, currentPlayer?.bingo_completed]);
 
   const handleCreateRoom = async () => {
     if (!playerName.trim()) {
@@ -387,8 +387,8 @@ export default function MultiplayerGame() {
 
   // 셀 클릭 처리
   const handleCellClick = async (index: number) => {
-    if (room?.game_status !== 'playing' || 
-        room.current_turn !== currentPlayer?.id || 
+    if ((room as any)?.game_status !== 'playing' || 
+        (room as any).current_turn !== currentPlayer?.id || 
         currentPlayer.bingo_completed) return;
 
     // 이미 클릭한 경우 무시
@@ -410,7 +410,7 @@ export default function MultiplayerGame() {
 
   // 게임 재시작 핸들러
   const handleResetGame = async () => {
-    if (room?.game_status !== 'finished' && room?.game_status !== 'waiting') {
+    if ((room as any)?.game_status !== 'finished' && (room as any)?.game_status !== 'waiting') {
       if (!confirm('게임을 재설정하시겠습니까? 현재 진행 중인 게임이 취소됩니다.')) {
         return;
       }
@@ -569,7 +569,7 @@ export default function MultiplayerGame() {
                     <div
                       key={player.id}
                       className={`p-2 rounded ${
-                        room?.current_turn === player.id
+                        (room as any)?.current_turn === player.id
                           ? 'bg-yellow-100'
                           : player.bingo_completed
                             ? 'bg-green-100'
@@ -578,7 +578,7 @@ export default function MultiplayerGame() {
                     >
                       {player.player_name}
                       {player.is_host && ' (방장)'}
-                      {room?.current_turn === player.id && ' (현재 턴)'}
+                      {(room as any)?.current_turn === player.id && ' (현재 턴)'}
                       {player.bingo_completed && player.rank && ` (${player.rank}위)`}
                     </div>
                   ))}
@@ -586,7 +586,7 @@ export default function MultiplayerGame() {
               </div>
 
               {/* 방장 권한 관련 UI */}
-              {currentPlayer?.is_host && room?.game_status === 'waiting' && (
+              {currentPlayer?.is_host && (room as any)?.game_status === 'waiting' && (
                 <div className="mb-4">
                   <div className="mb-3">
                     <label className="block text-gray-700 mb-2">
@@ -627,7 +627,7 @@ export default function MultiplayerGame() {
               )}
 
               {/* 게임 종료 시 재시작 버튼 */}
-              {currentPlayer?.is_host && room?.game_status === 'finished' && (
+              {currentPlayer?.is_host && (room as any)?.game_status === 'finished' && (
                 <div className="mb-4">
                   <button
                     onClick={handleResetGame}
@@ -638,9 +638,9 @@ export default function MultiplayerGame() {
                 </div>
               )}
 
-              {room?.game_status === 'playing' && (
+              {(room as any)?.game_status === 'playing' && (
                 <div className="mb-4">
-                  {room.current_turn === currentPlayer?.id && !currentPlayer?.bingo_completed ? (
+                  {(room as any).current_turn === currentPlayer?.id && !currentPlayer?.bingo_completed ? (
                     <div className="p-3 bg-green-100 rounded text-center">
                       <p className="text-lg font-bold text-green-800">당신의 턴입니다!</p>
                       <p className="text-sm text-green-600">빙고판에서 원하는 항목을 선택하세요.</p>
@@ -655,7 +655,7 @@ export default function MultiplayerGame() {
                   ) : (
                     <div className="p-3 bg-gray-100 rounded text-center">
                       <p className="text-lg font-bold text-gray-700">
-                        {players.find((p) => p.id === room.current_turn)?.player_name}님의 턴입니다
+                        {players.find((p) => p.id === (room as any).current_turn)?.player_name}님의 턴입니다
                       </p>
                       <p className="text-sm text-gray-600">상대방이 항목을 선택할 때까지 기다려주세요.</p>
                     </div>
@@ -679,8 +679,8 @@ export default function MultiplayerGame() {
               )}
 
               {/* 빙고 보드 - 클릭 가능 상태 표시 */}
-              {room?.game_status === 'playing' && (
-                <div className={`grid grid-cols-5 gap-1 mb-4 ${room.current_turn !== currentPlayer?.id || currentPlayer?.bingo_completed ? 'opacity-80' : ''}`}>
+              {(room as any)?.game_status === 'playing' && (
+                <div className={`grid grid-cols-5 gap-1 mb-4 ${(room as any).current_turn !== currentPlayer?.id || currentPlayer?.bingo_completed ? 'opacity-80' : ''}`}>
                   {bingoBoard.map((value, index) => {
                     // 이 셀이 완성된 라인에 포함되어 있는지 확인
                     const isPartOfCompletedLine = completedLines.some(line => 
@@ -699,7 +699,7 @@ export default function MultiplayerGame() {
                               ? 'bg-green-500 text-white' // 빙고 라인 셀
                               : 'bg-blue-500 text-white'  // 선택된 셀
                             : 'bg-gray-100'} // 미선택 셀
-                          ${room.current_turn === currentPlayer?.id && !checkedCells[index] && !currentPlayer.bingo_completed
+                          ${(room as any).current_turn === currentPlayer?.id && !checkedCells[index] && !currentPlayer.bingo_completed
                             ? 'cursor-pointer hover:bg-blue-100' 
                             : 'cursor-default'}
                           transition-colors
