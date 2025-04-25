@@ -1,13 +1,12 @@
 /** @type {import('next').NextConfig} */
-
-const nextConfig: NextConfig = {
+const nextConfig = {
+  // 기존 설정들...
   typescript: {
     ignoreBuildErrors: true,
   },
   eslint: {
     ignoreDuringBuilds: true,
   }
-  // 다른 config 옵션은 여기에
-}
+};
 
-export default nextConfig
+module.exports = nextConfig;
