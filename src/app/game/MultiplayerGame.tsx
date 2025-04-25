@@ -187,16 +187,16 @@ export default function MultiplayerGame() {
   }, [roomId]);
 
   useEffect(() => {
-    if ((room as any)?.current_turn === currentPlayer?.id) {
+    if ((room as any)?.current_turn === (currentPlayer as any)?.id) {
       setHasClickedThisTurn(false);
     }
-  }, [(room as any)?.current_turn, currentPlayer?.id]);
+  }, [(room as any)?.current_turn, (currentPlayer as any)?.id]);
 
   // 게임 시작 시 빙고판 초기화
   useEffect(() => {
     const initializeBoard = async () => {
       console.log('빙고판 초기화 검사 - 현재 방 상태:', (room as any)?.game_status);
-      console.log('현재 플레이어:', currentPlayer?.player_name);
+      console.log('현재 플레이어:', (currentPlayer as any)?.player_name);
       
       if ((room as any)?.game_status === 'playing' && currentPlayer) {
         console.log('게임 상태가 playing으로 변경됨 - 빙고판 초기화 시작');
@@ -209,7 +209,7 @@ export default function MultiplayerGame() {
         
         try {
           // getOrCreatePlayerBoard 함수 호출하여 빙고판 가져오기 또는 생성
-          const { board, isNew } = await getOrCreatePlayerBoard(currentPlayer.id);
+          const { board, isNew } = await getOrCreatePlayerBoard((currentPlayer as any).id);
           console.log(isNew ? '새 빙고판 생성됨:' : '기존 빙고판 로드됨:', board);
           
           // 빙고판 상태 업데이트
@@ -273,7 +273,7 @@ export default function MultiplayerGame() {
     if (!currentPlayer || !room) return;
     
     // 빙고 상태 체크
-    const result = await checkBingoStatus(currentPlayer.id, checkedCells, bingoBoard);
+    const result = await checkBingoStatus((currentPlayer as any).id, checkedCells, bingoBoard);
     
     if (result.completed) {
       // 빙고 완료!
@@ -292,10 +292,10 @@ export default function MultiplayerGame() {
 
   // 체크된 셀이 변경될 때마다 빙고 라인 체크
   useEffect(() => {
-    if ((room as any)?.game_status === 'playing' && !currentPlayer?.bingo_completed) {
+    if ((room as any)?.game_status === 'playing' && !(currentPlayer as any)?.bingo_completed) {
       checkBingoLines();
     }
-  }, [checkedCells, (room as any)?.game_status, currentPlayer?.bingo_completed]);
+  }, [checkedCells, (room as any)?.game_status, (currentPlayer as any)?.bingo_completed]);
 
   const handleCreateRoom = async () => {
     if (!playerName.trim()) {
@@ -343,7 +343,7 @@ export default function MultiplayerGame() {
     if (roomId && currentPlayer) {
       try {
         // 1. 서버에 방 나가기 요청
-        await leaveRoom(roomId, currentPlayer.id);
+        await leaveRoom(roomId, (currentPlayer as any).id);
         
         // 2. 마지막 플레이어가 나갈 경우 방 관련 데이터 정리
         if (players.length <= 1) {
@@ -388,8 +388,8 @@ export default function MultiplayerGame() {
   // 셀 클릭 처리
   const handleCellClick = async (index: number) => {
     if ((room as any)?.game_status !== 'playing' || 
-        (room as any).current_turn !== currentPlayer?.id || 
-        currentPlayer.bingo_completed) return;
+        (room as any).current_turn !== (currentPlayer as any)?.id || 
+        (currentPlayer as any)?.bingo_completed) return;
 
     // 이미 클릭한 경우 무시
     if (hasClickedThisTurn || checkedCells[index]) return;
@@ -402,7 +402,7 @@ export default function MultiplayerGame() {
       setCheckedCells(newCheckedCells);
 
       setHasClickedThisTurn(true); // 한 번만 허용!
-      console.log(`${currentPlayer.player_name}님이 "${bingoBoard[index]}" 셀을 선택했습니다.`);
+      console.log(`${(currentPlayer as any).player_name}님이 "${bingoBoard[index]}" 셀을 선택했습니다.`);
     } catch (err) {
       console.error('셀 선택 중 오류:', err);
     }
@@ -586,7 +586,7 @@ export default function MultiplayerGame() {
               </div>
 
               {/* 방장 권한 관련 UI */}
-              {currentPlayer?.is_host && (room as any)?.game_status === 'waiting' && (
+              {(currentPlayer as any)?.is_host && (room as any)?.game_status === 'waiting' && (
                 <div className="mb-4">
                   <div className="mb-3">
                     <label className="block text-gray-700 mb-2">
@@ -627,7 +627,7 @@ export default function MultiplayerGame() {
               )}
 
               {/* 게임 종료 시 재시작 버튼 */}
-              {currentPlayer?.is_host && (room as any)?.game_status === 'finished' && (
+              {(currentPlayer as any)?.is_host && (room as any)?.game_status === 'finished' && (
                 <div className="mb-4">
                   <button
                     onClick={handleResetGame}
@@ -640,12 +640,12 @@ export default function MultiplayerGame() {
 
               {(room as any)?.game_status === 'playing' && (
                 <div className="mb-4">
-                  {(room as any).current_turn === currentPlayer?.id && !currentPlayer?.bingo_completed ? (
+                  {(room as any).current_turn === (currentPlayer as any)?.id && !(currentPlayer as any)?.bingo_completed ? (
                     <div className="p-3 bg-green-100 rounded text-center">
                       <p className="text-lg font-bold text-green-800">당신의 턴입니다!</p>
                       <p className="text-sm text-green-600">빙고판에서 원하는 항목을 선택하세요.</p>
                     </div>
-                  ) : currentPlayer?.bingo_completed ? (
+                  ) : (currentPlayer as any)?.bingo_completed ? (
                     <div className="p-3 bg-blue-100 rounded text-center">
                       <p className="text-lg font-bold text-blue-800">
                         빙고 완료! ({myRank}위)
@@ -680,7 +680,7 @@ export default function MultiplayerGame() {
 
               {/* 빙고 보드 - 클릭 가능 상태 표시 */}
               {(room as any)?.game_status === 'playing' && (
-                <div className={`grid grid-cols-5 gap-1 mb-4 ${(room as any).current_turn !== currentPlayer?.id || currentPlayer?.bingo_completed ? 'opacity-80' : ''}`}>
+                <div className={`grid grid-cols-5 gap-1 mb-4 ${(room as any).current_turn !== (currentPlayer as any)?.id || (currentPlayer as any)?.bingo_completed ? 'opacity-80' : ''}`}>
                   {bingoBoard.map((value, index) => {
                     // 이 셀이 완성된 라인에 포함되어 있는지 확인
                     const isPartOfCompletedLine = completedLines.some(line => 
@@ -699,7 +699,7 @@ export default function MultiplayerGame() {
                               ? 'bg-green-500 text-white' // 빙고 라인 셀
                               : 'bg-blue-500 text-white'  // 선택된 셀
                             : 'bg-gray-100'} // 미선택 셀
-                          ${(room as any).current_turn === currentPlayer?.id && !checkedCells[index] && !currentPlayer.bingo_completed
+                          ${(room as any).current_turn === (currentPlayer as any)?.id && !checkedCells[index] && !(currentPlayer as any)?.bingo_completed
                             ? 'cursor-pointer hover:bg-blue-100' 
                             : 'cursor-default'}
                           transition-colors
