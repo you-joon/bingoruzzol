@@ -95,7 +95,11 @@ export const useBingoGame = (roomId: string | null) => {
         .single();
 
       if (roomError) throw new Error('존재하지 않는 방입니다.');
-      if (room.game_status !== 'waiting') throw new Error('이미 게임이 시작된 방입니다.');
+      
+      // 게임 상태 확인 - 이 부분이 중요합니다
+      if (room.game_status !== 'waiting') {
+        throw new Error('이미 게임이 진행 중인 방입니다.');
+      }
 
       // 플레이어 생성
       const { data: player, error: playerError } = await supabase
@@ -164,7 +168,8 @@ export const useBingoGame = (roomId: string | null) => {
       console.log('빙고판 저장 성공:', boardData);
       return { success: true, data: boardData };
     } catch (err) {
-      console.error('빙고판 저장 중 오류:', err);
+      console.error('빙고판 저장 중 오류 세부 정보:', err);
+      console.error('저장 시도된 데이터:', { roomId, playerId, boardDataLength: boardData?.length });
       setError(err instanceof Error ? err.message : '빙고판 저장 중 오류가 발생했습니다.');
       return { success: false, error: err };
     }
@@ -228,44 +233,60 @@ export const useBingoGame = (roomId: string | null) => {
   };
 
   // 게임 시작
-  const startGame = async () => {
+  const startGame = async (winCondition: number) => {
     if (!room || !currentPlayer?.is_host) return;
 
     try {
       console.log('Starting game...', room.room_id);
       
-      // 게임 상태 업데이트를 먼저 수행
-      const { data, error: roomError } = await supabase
-      .from('bingo_rooms')
-      .update({
-        game_status: 'playing',
-        current_turn: currentPlayer.id, // 방장부터 시작
-      })
-      .eq('room_id', room.room_id)
-      .select();
-
-      if (roomError) throw roomError;
-
-      console.log('Room update result:', data);
-      setRoom(prev => ({
-        ...prev,
-        game_status: 'playing',
-        current_turn: currentPlayer.id
-      }));
-      
       // 플레이어 순서 랜덤 배정
       const shuffledPlayers = [...players].sort(() => Math.random() - 0.5);
+      
+      // 첫 번째 턴을 가질 플레이어 (랜덤으로 선택된 첫 번째 플레이어)
+      const firstPlayer = shuffledPlayers[0];
       
       // 플레이어 순서 업데이트
       for (let i = 0; i < shuffledPlayers.length; i++) {
         const { error: updateError } = await supabase
           .from('room_players')
-          .update({ turn_order: i })
+          .update({ 
+            turn_order: i,
+            bingo_completed: false,
+            rank: null
+          })
           .eq('id', shuffledPlayers[i].id);
 
         if (updateError) throw updateError;
       }
+      
+      // 게임 상태 업데이트 (첫 번째 플레이어가 첫 턴)
+      const { data, error: roomError } = await supabase
+        .from('bingo_rooms')
+        .update({
+          game_status: 'playing',
+          current_turn: firstPlayer.id, // 랜덤으로 선택된 첫 번째 플레이어가 첫 턴
+          win_condition: winCondition,
+          completed_players: [],
+          last_cell_index: null,
+          last_cell_value: null,
+          last_player: null
+        })
+        .eq('room_id', room.room_id)
+        .select();
 
+      if (roomError) throw roomError;
+
+      console.log('Room update result:', data);
+      console.log(`첫 턴 플레이어: ${firstPlayer.player_name}`);
+      
+      setRoom(prev => ({
+        ...prev,
+        game_status: 'playing',
+        current_turn: firstPlayer.id,
+        win_condition: winCondition,
+        completed_players: []
+      }));
+      
       console.log('Game started successfully');
     } catch (err) {
       console.error('Error starting game:', err);
@@ -300,11 +321,11 @@ export const useBingoGame = (roomId: string | null) => {
     }
   };
 
-  // 셀 클릭 제출 (새 함수)
+  // submitCell 함수 수정
   const submitCell = async (cellIndex: number, cellValue: string) => {
     if (!room || !currentPlayer || room.current_turn !== currentPlayer.id) return;
     try {
-      // 1. 셀 클릭 기록 저장 (game_history)
+      // 1. 셀 클릭 기록 저장
       await supabase
         .from('game_history')
         .insert({
@@ -313,45 +334,216 @@ export const useBingoGame = (roomId: string | null) => {
           action_type: 'cell_click',
           action_data: { cellIndex, cellValue },
         });
-  
-      // 2. 다음 턴 플레이어 계산
-  
-      // 우선 turn_order 기준으로 시도
-      let nextPlayer = null;
-      if (currentPlayer.turn_order !== undefined) {
-        const currentTurnOrder = currentPlayer.turn_order;
-        const nextTurnOrder = (currentTurnOrder + 1) % players.length;
-        nextPlayer = players.find(p => p.turn_order === nextTurnOrder);
-      }
-  
-      // turn_order 기준으로 못 찾은 경우 → index 기반 fallback 처리
-      if (!nextPlayer) {
-        const currentIndex = players.findIndex(p => p.id === currentPlayer.id);
-        const nextIndex = (currentIndex + 1) % players.length;
-        nextPlayer = players[nextIndex];
-      }
-  
-      if (!nextPlayer) {
-        console.warn('다음 턴 플레이어를 찾을 수 없습니다.');
-        return;
-      }
-  
-      // 3. bingo_rooms 상태 업데이트
-      await supabase
-        .from('bingo_rooms')
-        .update({
-          current_turn: nextPlayer.id,
-          last_cell_index: cellIndex,
-          last_cell_value: cellValue,
-          last_player: currentPlayer.id,
-        })
-        .eq('room_id', Number(roomId));
-  
-      console.log(`턴이 ${nextPlayer.player_name}님에게 넘어갔습니다.`);
 
+      // 2. 모든 플레이어의 보드 상태 가져오기
+      const { data: allBoards, error: boardsError } = await supabase
+        .from('bingo_boards')
+        .select('player_id, board_data')
+        .eq('room_id', roomId);
+
+      if (boardsError) throw boardsError;
+
+      // 3. 이미 빙고 완료된 플레이어 목록 가져오기
+      const { data: completedPlayers, error: completedError } = await supabase
+        .from('room_players')
+        .select('id, rank')
+        .eq('room_id', roomId)
+        .eq('bingo_completed', true);
+
+      if (completedError) throw completedError;
+      
+      // 4. 현재 턴의 숫자로 빙고가 완성될 수 있는 플레이어들 계산
+      const potentialWinners = [];
+      for (const player of players) {
+        // 이미 빙고 완료된 플레이어는 건너뛰기
+        if (completedPlayers.some(p => p.id === player.id)) continue;
+        
+        // 이 플레이어의 보드 데이터 찾기
+        const playerBoard = allBoards.find(b => b.player_id === player.id);
+        if (!playerBoard) continue;
+        
+        // 현재 숫자가 이 플레이어의 보드에 있는지 확인
+        const hasNumber = playerBoard.board_data.includes(cellValue);
+        if (!hasNumber) continue;
+
+        // 이 플레이어의 현재 체크된 셀 상태 가져오기 (추가 DB 쿼리 필요)
+        // 여기서는 간단히 처리하기 위해 프론트엔드에서 계산된 값을 사용한다고 가정
+        // 실제로는 이 정보를 DB에 저장하고 가져와야 합니다
+        
+        // 빙고 체크 로직 (이 부분을 백엔드로 이동하는 것이 이상적)
+        // 여기서는 체크 후 빙고 여부를 확인
+        if (await checkIfPlayerCompletesBingo(player.id, cellValue)) {
+          potentialWinners.push(player.id);
+        }
+      }
+
+      // 5. 동시 빙고 처리
+      if (potentialWinners.length > 0) {
+        const nextRank = (completedPlayers?.length || 0) + 1;
+        
+        // 모든 잠재적 승자를 같은 순위로 처리
+        for (const winnerId of potentialWinners) {
+          await supabase
+            .from('room_players')
+            .update({
+              bingo_completed: true,
+              rank: nextRank  // 모두 같은 순위
+            })
+            .eq('id', winnerId);
+
+          // 빙고 메시지
+          const winnerName = players.find(p => p.id === winnerId)?.player_name;
+          await sendMessage(`${winnerName}님이 빙고를 완료했습니다! (공동 ${nextRank}위)`);
+        }
+        
+        // 6. 게임 종료 조건 확인
+        const totalPlayers = players.length;
+        const nowCompletedCount = (completedPlayers?.length || 0) + potentialWinners.length;
+        
+        // 게임 종료 조건:
+        // - 2명일 때: 1명이 빙고 완료하면 종료
+        // - 3명 이상일 때: (전체 인원 - 1)명이 빙고 완료하면 종료
+        const requiredCompletions = totalPlayers === 2 ? 1 : totalPlayers - 1;
+        
+        if (nowCompletedCount >= requiredCompletions) {
+          // 모든 플레이어가 빙고를 완료했으면 "무승부" 처리
+          if (nowCompletedCount === totalPlayers) {
+            await sendMessage('🎉 모든 플레이어가 동시에 빙고를 완료했습니다! 무승부입니다!');
+          }
+          // 그 외 게임 종료
+          else {
+            await sendMessage(`🎉 게임 종료! ${potentialWinners.length > 1 ? '공동 ' + nextRank + '위가 결정되었습니다!' : nextRank + '위가 결정되었습니다!'}`);
+          }
+          
+          // 게임 상태 업데이트
+          await supabase
+            .from('bingo_rooms')
+            .update({ game_status: 'finished' })
+            .eq('room_id', roomId);
+            
+          return;
+        }
+      }
+
+      // 7. 다음 턴 결정 (빙고 미완료 플레이어 중에서)
+      const activePlayers = players.filter(p => !completedPlayers.some(cp => cp.id === p.id) && !potentialWinners.includes(p.id));
+      
+      if (activePlayers.length > 0) {
+        let nextPlayer = null;
+        let currentIndex = players.findIndex(p => p.id === currentPlayer.id);
+        let loopCount = 0;
+        
+        while (loopCount < players.length && !nextPlayer) {
+          loopCount++;
+          currentIndex = (currentIndex + 1) % players.length;
+          const candidate = players[currentIndex];
+          
+          if (activePlayers.some(p => p.id === candidate.id)) {
+            nextPlayer = candidate;
+            break;
+          }
+        }
+        
+        if (nextPlayer) {
+          await supabase
+            .from('bingo_rooms')
+            .update({
+              current_turn: nextPlayer.id,
+              last_cell_index: cellIndex,
+              last_cell_value: cellValue,
+              last_player: currentPlayer.id,
+            })
+            .eq('room_id', roomId);
+            
+          console.log(`턴이 ${nextPlayer.player_name}님에게 넘어갔습니다.`);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '셀 선택 중 오류가 발생했습니다.');
       console.error(err);
+    }
+  };
+
+  // 빙고 확인 헬퍼 함수 (별도로 구현 필요)
+  const checkIfPlayerCompletesBingo = async (playerId: string, cellValue: string) => {
+    try {
+      // 1. 플레이어의 빙고판 데이터 가져오기
+      const { data: boardData, error: boardError } = await supabase
+        .from('bingo_boards')
+        .select('board_data')
+        .eq('player_id', playerId)
+        .eq('room_id', roomId)
+        .single();
+        
+      if (boardError) throw boardError;
+      if (!boardData || !boardData.board_data) return false;
+      
+      const board = boardData.board_data;
+      
+      // 2. 이미 체크된 셀 목록 가져오기 (이 정보를 DB에 저장하고 있다면)
+      // 여기서는 간단히 구현하기 위해 모든 플레이어의 선택 기록을 가져와 체크된 셀을 계산
+      const { data: history, error: historyError } = await supabase
+        .from('game_history')
+        .select('action_data')
+        .eq('room_id', roomId)
+        .eq('action_type', 'cell_click');
+        
+      if (historyError) throw historyError;
+      
+      // 3. 선택된 셀 값들 추출
+      const selectedValues = history.map(h => h.action_data?.cellValue).filter(Boolean);
+      
+      // 현재 선택된 값 추가 (아직 히스토리에 반영되지 않았으므로)
+      selectedValues.push(cellValue);
+      
+      // 4. 플레이어의 빙고판에서 체크된 셀 계산
+      const checkedCells = Array(25).fill(false);
+      board.forEach((value, index) => {
+        if (selectedValues.includes(value)) {
+          checkedCells[index] = true;
+        }
+      });
+      
+      // 5. 빙고 라인 체크
+      const size = 5; // 5x5 빙고판
+      let completedLinesCount = 0;
+      const winCondition = room?.win_condition || 3; // 기본값 3
+      
+      // 가로 라인 체크
+      for (let row = 0; row < size; row++) {
+        const lineIndices = Array.from({ length: size }, (_, col) => row * size + col);
+        if (lineIndices.every(idx => checkedCells[idx])) {
+          completedLinesCount++;
+        }
+      }
+      
+      // 세로 라인 체크
+      for (let col = 0; col < size; col++) {
+        const lineIndices = Array.from({ length: size }, (_, row) => row * size + col);
+        if (lineIndices.every(idx => checkedCells[idx])) {
+          completedLinesCount++;
+        }
+      }
+      
+      // 대각선 라인 체크 (왼쪽 위 -> 오른쪽 아래)
+      const diagonal1 = Array.from({ length: size }, (_, i) => i * size + i);
+      if (diagonal1.every(idx => checkedCells[idx])) {
+        completedLinesCount++;
+      }
+      
+      // 대각선 라인 체크 (오른쪽 위 -> 왼쪽 아래)
+      const diagonal2 = Array.from({ length: size }, (_, i) => (i + 1) * size - (i + 1));
+      if (diagonal2.every(idx => checkedCells[idx])) {
+        completedLinesCount++;
+      }
+      
+      // 6. 빙고 완성 여부 반환
+      console.log(`플레이어 ${playerId}의 빙고 라인 수: ${completedLinesCount}, 승리 조건: ${winCondition}`);
+      return completedLinesCount >= winCondition;
+      
+    } catch (err) {
+      console.error('빙고 확인 중 오류:', err);
+      return false; // 오류 발생 시 빙고 없음으로 처리
     }
   };
   

@@ -329,10 +329,12 @@ export default function MultiplayerGame() {
       if (player) {
         setRoomId(targetRoomId);
       } else if (error) {
-        alert(error); // 다른 오류가 있는 경우
+        alert(error); // 이 부분이 오류 메시지를 표시합니다
       }
     } catch (err) {
-      alert('방 참여 중 오류가 발생했습니다.');
+      // 에러 객체에서 메시지 추출
+      const errorMessage = err instanceof Error ? err.message : '방 참여 중 오류가 발생했습니다.';
+      alert(errorMessage);
       console.error(err);
     }
   };
@@ -509,8 +511,8 @@ export default function MultiplayerGame() {
                 {roomList.map((room) => (
                   <div
                     key={room.id}
-                    className="border rounded p-3 hover:bg-gray-50 cursor-pointer"
-                    onClick={() => handleJoinRoom(room.id)}
+                    className={`border rounded p-3 hover:bg-gray-50 ${room.game_status === 'playing' ? 'opacity-50' : 'cursor-pointer'}`}
+                    onClick={() => room.game_status === 'waiting' ? handleJoinRoom(room.id) : alert('이미 게임이 진행 중인 방입니다.')}
                   >
                     <div className="flex justify-between items-center">
                       <span className="font-medium">방 #{room.id}</span>
@@ -521,8 +523,8 @@ export default function MultiplayerGame() {
                     <div className="text-sm text-gray-600">
                       방장: {room.host_name}
                     </div>
-                    <div className="text-sm text-gray-500">
-                      상태: {room.game_status === 'waiting' ? '대기 중' : '게임 중'}
+                    <div className={`text-sm ${room.game_status === 'waiting' ? 'text-green-500' : 'text-red-500 font-bold'}`}>
+                      상태: {room.game_status === 'waiting' ? '입장 가능' : '게임 진행 중'}
                     </div>
                   </div>
                 ))}
