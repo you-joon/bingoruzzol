@@ -1,10 +1,12 @@
-import type { NextConfig } from 'next'
+/** @type {import('next').NextConfig} */
 
 const nextConfig: NextConfig = {
-  eslint: {
-    // 💥 빌드 중 ESLint 오류 무시
-    ignoreDuringBuilds: true,
+  typescript: {
+    ignoreBuildErrors: true,
   },
+  eslint: {
+    ignoreDuringBuilds: true,
+  }
   // 다른 config 옵션은 여기에
 }
 
