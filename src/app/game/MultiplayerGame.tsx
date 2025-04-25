@@ -242,7 +242,7 @@ export default function MultiplayerGame() {
       let hasNumber = false;
 
       bingoBoard.forEach((value, index) => {
-        if (value === room.last_cell_value) {
+        if (value === (room as any).last_cell_value) {
           hasNumber = true;
           if (!checkedCells[index]) {
             newCheckedCells[index] = true;
@@ -663,15 +663,15 @@ export default function MultiplayerGame() {
                   
                   {/* 승리 조건 표시 */}
                   <div className="mt-2 text-center text-sm text-gray-600">
-                    승리 조건: {room.win_condition}줄 빙고
+                    승리 조건: {(room as any).win_condition}줄 빙고
                   </div>
                   
                   {/* 마지막으로 선택된 항목 표시 */}
-                  {room.last_cell_value && (
+                  {(room as any).last_cell_value && (
                     <div className="mt-3 p-2 bg-yellow-100 rounded text-center">
                       <p className="text-sm">
-                        마지막 선택: <span className="font-bold">"{room.last_cell_value}"</span>
-                        {room.last_player && ` (${players.find(p => p.id === room.last_player)?.player_name})`}
+                        마지막 선택: <span className="font-bold">"{(room as any).last_cell_value}"</span>
+                        {(room as any).last_player && ` (${players.find(p => p.id === (room as any).last_player)?.player_name})`}
                       </p>
                     </div>
                   )}
